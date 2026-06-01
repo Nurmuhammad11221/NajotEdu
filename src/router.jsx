@@ -7,6 +7,9 @@ import Oqituvchilar from "./pages/Oqituvchilar";
 import Talabalar from "./pages/Talabalar";
 import Guruhlar from "./pages/Guruhlar";
 import Xonalar from "./pages/Xonalar";
+import Xodimlar from "./pages/Xodimlar";
+import GroupDetails from "./pages/GroupDetails";
+import AddHomework from "./pages/AddHomework";
 
 export const router = createBrowserRouter([
   {
@@ -26,7 +29,11 @@ export const router = createBrowserRouter([
       { path: "oqituvchilar", element: <Oqituvchilar /> },
       { path: "students", element: <Talabalar /> },
       { path: "groups", element: <Guruhlar /> },
+      { path: "groups/:id", element: <GroupDetails /> },
+      { path: "groups/:id/homework", element: <AddHomework /> },
+      { path: "groups/:id/homework/:lessonId", element: <AddHomework /> },
       { path: "xonalar", element: <Xonalar /> },
+      { path: "xodimlar", element: <Xodimlar /> },
     ],
   },
 ]);

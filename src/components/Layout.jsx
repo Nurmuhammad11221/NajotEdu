@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, Outlet, useLocation } from "react-router-dom";
 import {
   PeopleAlt,
@@ -31,14 +31,9 @@ import {
 const boshqarishItems = [
   { icon: <PlayLesson sx={{ fontSize: 17 }} />, label: "Kurslar", path: "/dashboard/kurslar" },
   { icon: <LocationOn sx={{ fontSize: 17 }} />, label: "Xonalar", path: "/dashboard/xonalar" },
-  { icon: <AccountBalance sx={{ fontSize: 17 }} />, label: "Filial", path: "/dashboard/filial" },
-  { icon: <Badge sx={{ fontSize: 17 }} />, label: "Hodimlar", path: "/dashboard/hodimlar" },
-  { icon: <Report sx={{ fontSize: 17 }} />, label: "Sabablar", path: "/dashboard/sabablar" },
-  { icon: <AdminPanelSettings sx={{ fontSize: 17 }} />, label: "Rollar", path: "/dashboard/rollar" },
-  { icon: <MonetizationOn sx={{ fontSize: 17 }} />, label: "Coin", path: "/dashboard/coin" },
-  { icon: <Message sx={{ fontSize: 17 }} />, label: "Xabar Yuborish", path: "/dashboard/xabar" },
-  { icon: <Help sx={{ fontSize: 17 }} />, label: "FAQ", path: "/dashboard/faq" },
-  { icon: <VerifiedUser sx={{ fontSize: 17 }} />, label: "Tekshiruv", path: "/dashboard/tekshiruv" },
+  { icon: <ManageAccounts sx={{ fontSize: 17 }} />, label: "Xodimlar", path: "/dashboard/xodimlar" },
+  { icon: <MonetizationOn sx={{ fontSize: 17 }} />, label: "Coin" },
+  { icon: <Message sx={{ fontSize: 17 }} />, label: "Xabar yuborish" },
 ];
 
 const navItems = [
@@ -58,17 +53,23 @@ const Layout = () => {
   const [showSubmenu, setShowSubmenu] = useState(false);
   const leaveTimer = useRef(null);
 
-  const handleEnter = () => {
-    clearTimeout(leaveTimer.current);
-    setShowSubmenu(true);
-  };
-
-  const handleLeave = () => {
-    leaveTimer.current = setTimeout(() => setShowSubmenu(false), 150);
+  const toggleSubmenu = () => {
+    setShowSubmenu((prev) => !prev);
   };
 
   const location = useLocation();
   const currentPath = location.pathname;
+
+  useEffect(() => {
+    if (!localStorage.getItem("lms_token")) {
+      navigate("/login");
+    }
+  }, [navigate]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("lms_token");
+    navigate("/login");
+  };
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#f4f5fb]">
@@ -79,36 +80,54 @@ const Layout = () => {
           } bg-white shadow-md flex-shrink-0 z-40`}
       >
         {/* Submenu Panel */}
-        {showSubmenu && (
-          <div
-            className="absolute top-0 left-full z-50 h-full"
-            style={{ width: "208px" }}
-            onMouseEnter={handleEnter}
-            onMouseLeave={handleLeave} zzyyyyyyyyyyyyyyyyyyyyyyyyyyzzyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
-          >
-            <div className="bg-white shadow-2xl border-r border-gray-100 h-full flex flex-col py-2">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-4 py-2">
-                Menu
-              </p>
-              {boshqarishItems.map((sub) => {
-                const cleanPath = (currentPath || window.location.pathname || "").replace(/\/$/, "").toLowerCase();
-                const cleanSubPath = (sub.path || "").replace(/\/$/, "").toLowerCase();
-                const isActive = cleanPath === cleanSubPath;
-                return (
+        <div
+          className={`absolute top-0 left-full z-50 h-full transform transition-transform duration-300 ease-out ${showSubmenu ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0 pointer-events-none"}`}
+          style={{ width: "250px" }}
+        >
+          <div className="bg-white shadow-xl border-l border-gray-100 h-full flex flex-col py-3">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <div className="flex items-center gap-3">
                   <button
-                    key={sub.label}
-                    onClick={() => { navigate(sub.path); setShowSubmenu(false); }}
-                    className={`flex items-center w-full gap-3 px-4 py-2.5 text-[13px] transition-colors ${isActive ? "bg-[#7c3aed] text-white font-semibold animate-pulse-subtle" : "text-gray-700 hover:bg-purple-50 hover:text-[#7c3aed]"
-                      }`}
+                    onClick={() => setShowSubmenu(false)}
+                    className="w-9 h-9 rounded-full bg-[#7c3aed] text-white flex items-center justify-center shadow-sm transition-colors hover:bg-[#5b21b6]"
                   >
-                    <span className={isActive ? "text-white" : "text-gray-400"}>{sub.icon}</span>
-                    {sub.label}
+                    <ChevronLeft sx={{ fontSize: 18 }} />
                   </button>
-                );
-              })}
+                  <span className="text-sm font-semibold text-gray-900">Menu</span>
+                </div>                                                                                                                           
+                <button onClick={() => setShowSubmenu(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                  ✕
+                </button>
+              </div>
+              <div className="px-3 py-2 space-y-1.5">
+                {boshqarishItems.map((sub) => {
+                  const cleanPath = (currentPath || window.location.pathname || "").replace(/\/$/, "").toLowerCase();
+                  const cleanSubPath = (sub.path || "").replace(/\/$/, "").toLowerCase();
+                  const isActive = sub.path ? cleanPath === cleanSubPath : false;
+                  const isClickable = Boolean(sub.path);
+                  return (
+                    <button
+                      key={sub.label}
+                      onClick={() => {
+                        if (isClickable) {
+                          navigate(sub.path);
+                          setShowSubmenu(false);
+                        }
+                      }}
+                      className={`flex items-center w-full gap-3 rounded-[18px] px-4 py-2.5 text-[13px] font-medium transition-all duration-200 ${isActive ? "bg-[#7c3aed] text-white shadow-sm border border-transparent" : isClickable ? "bg-white text-slate-700 border border-slate-100 hover:bg-[#f3e8ff] hover:text-[#7c3aed]" : "bg-slate-50 text-slate-400 border border-slate-200 cursor-not-allowed"}`}
+                      disabled={!isClickable}
+                    >
+                      <span className={`flex items-center justify-center w-10 h-10 rounded-2xl ${isActive ? "bg-white text-[#7c3aed]" : "bg-slate-100 text-slate-500"}`}>
+                        {sub.icon}
+                      </span>
+                      <span className="text-[13px]">{sub.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        )}
+        
 
         {/* Logo */}
         <div>
@@ -135,20 +154,18 @@ const Layout = () => {
                 (cleanItemPath === "/dashboard" && cleanPath === "/dashboard")
               );
 
-              // Maxsus holat: Boshqarish menyusining o'zi active bo'lishi agar ichidagi sahifalar faol bo'lsa
-              const isSubmenuActive = item.hasSubmenu && boshqarishItems.some(sub => {
+              const childRouteActive = item.hasSubmenu && boshqarishItems.some(sub => {
                 const cleanSubPath = (sub.path || "").replace(/\/$/, "").toLowerCase();
                 return cleanPath === cleanSubPath;
               });
 
-              const trulyActive = isActive || isSubmenuActive;
+              const isSubmenuParentActive = item.hasSubmenu && showSubmenu && !childRouteActive;
+              const trulyActive = isActive || isSubmenuParentActive;
 
               return (
                 <button
                   key={item.label}
-                  onClick={() => !item.hasSubmenu && navigate(item.path)}
-                  onMouseEnter={item.hasSubmenu ? handleEnter : undefined}
-                  onMouseLeave={item.hasSubmenu ? handleLeave : undefined}
+                  onClick={() => item.hasSubmenu ? toggleSubmenu() : navigate(item.path)}
                   className={`flex items-center w-full gap-3 px-3 py-2.5 rounded-lg text-[13.5px] font-semibold transition-all relative ${trulyActive
                       ? "bg-[#7c3aed] text-white shadow-md shadow-purple-500/10"
                       : "text-gray-600 hover:bg-purple-50 hover:text-[#7c3aed]"
@@ -179,7 +196,7 @@ const Layout = () => {
                 </div>
               </div>
               <button
-                onClick={() => navigate("/login")}
+                onClick={handleLogout}
                 className="w-full mt-2 bg-red-500 hover:bg-red-600 text-white text-[11px] font-semibold py-1.5 rounded-lg flex items-center justify-center gap-1 transition-colors"
               >
                 <Refresh sx={{ fontSize: 13 }} />

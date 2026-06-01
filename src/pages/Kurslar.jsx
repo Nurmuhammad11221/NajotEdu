@@ -1,17 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Delete, Edit, Add, Close, AttachMoney } from "@mui/icons-material";
+import { api } from "../utils/api";
+import DeleteConfirmModal from "../components/DeleteConfirmModal";
 
 const tabs = [
   { label: "Kurslar", path: "/dashboard/kurslar" },
   { label: "Xonalar", path: "/dashboard/xonalar" },
-  { label: "Filiallar", disabled: true },
-  { label: "Xodimlar", disabled: true },
-  { label: "Sabablar", disabled: true },
-  { label: "Rollar", disabled: true },
-  { label: "Coin", disabled: true },
-  { label: "Xabar yuborish", disabled: true },
-  { label: "Tekshiruv", disabled: true }
+  { label: "Xodimlar", path: "/dashboard/xodimlar" },
 ];
 
 const filialTabs = ["Filial 1", "Filial 2", "Arxiv"];
@@ -72,15 +68,49 @@ const Kurslar = () => {
   const [showPanel, setShowPanel] = useState(false);
   const [form, setForm] = useState(defaultForm);
   const [filialOptions] = useState(["Filial 1", "Filial 2"]);
+  const [deleteItem, setDeleteItem] = useState(null);
 
-  useEffect(() => {
-    const stored = localStorage.getItem("lms_courses");
-    if (stored) {
-      setCourses(JSON.parse(stored));
-    } else {
-      localStorage.setItem("lms_courses", JSON.stringify(sampleCourses));
+  const loadCourses = async () => {
+    try {
+      const data = await api.getCourses();
+      const list = Array.isArray(data) ? data : data.data || [];
+      const formatted = list.map((c, idx) => ({
+        id: c.id || idx + 1,
+        title: c.name || "Dasturlash",
+        description: c.description || "Tavsif berilmagan.",
+        duration: `${c.duration_hours || 90} min`,
+        period: `${c.duration_month || 6} oy`,
+        price: c.price ? `${c.price.toLocaleString()} so'm` : "1 200 000 so'm",
+        rang: rangli[idx % rangli.length] || "#7c3aed",
+      }));
+      if (formatted.length > 0) {
+        setCourses(formatted);
+        localStorage.setItem("lms_courses", JSON.stringify(formatted));
+      } else {
+        useFallbackCourses();
+      }
+    } catch (err) {
+      console.warn("Backend API error, using localStorage fallback:", err);
+      useFallbackCourses();
+    }
+  };
+
+  const useFallbackCourses = () => {
+    try {
+      const stored = localStorage.getItem("lms_courses");
+      if (stored) {
+        setCourses(JSON.parse(stored));
+      } else {
+        localStorage.setItem("lms_courses", JSON.stringify(sampleCourses));
+        setCourses(sampleCourses);
+      }
+    } catch (e) {
       setCourses(sampleCourses);
     }
+  };
+
+  useEffect(() => {
+    loadCourses();
   }, []);
 
   const toggleFilial = (f) => {
@@ -92,28 +122,62 @@ const Kurslar = () => {
     }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.nomi.trim()) return;
-    const newCourse = {
-      id: Date.now(),
-      title: form.nomi,
-      description: form.description || "A little about the company and the team that you'll be working with. A li...",
-      duration: form.darsVaqt || "90 min",
-      period: form.kursOy || "3 oy",
-      price: form.narx ? `${form.narx} mln` : "1 000 000 mln",
-      rang: form.rang,
-    };
-    const updated = [...courses, newCourse];
-    setCourses(updated);
-    localStorage.setItem("lms_courses", JSON.stringify(updated));
-    setForm(defaultForm);
-    setShowPanel(false);
+    try {
+      const payload = {
+        name: form.nomi,
+        description: form.description || "Tavsif berilmagan.",
+        price: Number(form.narx) || 1200000,
+        duration_month: Number(form.kursOy.replace(/\D/g, "")) || 6,
+        duration_hours: Number(form.darsVaqt.replace(/\D/g, "")) || 90
+      };
+      await api.createCourse(payload);
+      loadCourses();
+      setForm(defaultForm);
+      setShowPanel(false);
+    } catch (err) {
+      console.error(err);
+      // Fallback local adding
+      const newCourse = {
+        id: Date.now(),
+        title: form.nomi,
+        description: form.description || "A little about the company and the team that you'll be working with. A li...",
+        duration: form.darsVaqt || "90 min",
+        period: form.kursOy || "3 oy",
+        price: form.narx ? `${form.narx} so'm` : "1 000 000 so'm",
+        rang: form.rang,
+      };
+      const updated = [...courses, newCourse];
+      setCourses(updated);
+      localStorage.setItem("lms_courses", JSON.stringify(updated));
+      setForm(defaultForm);
+      setShowPanel(false);
+    }
   };
 
-  const handleDelete = (id) => {
-    const updated = courses.filter((c) => c.id !== id);
-    setCourses(updated);
-    localStorage.setItem("lms_courses", JSON.stringify(updated));
+  const handleDeleteClick = (id) => {
+    setDeleteItem(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteItem) return;
+    try {
+      if (api.deleteCourse) {
+        await api.deleteCourse(deleteItem);
+      }
+      const updated = courses.filter((c) => c.id !== deleteItem);
+      setCourses(updated);
+      localStorage.setItem("lms_courses", JSON.stringify(updated));
+    } catch (e) {
+      console.error("Kursni o'chirishda xatolik:", e);
+      // Fallback local delete
+      const updated = courses.filter((c) => c.id !== deleteItem);
+      setCourses(updated);
+      localStorage.setItem("lms_courses", JSON.stringify(updated));
+    } finally {
+      setDeleteItem(null);
+    }
   };
 
   const getCardColor = (i) => cardColors[i % cardColors.length];
@@ -198,12 +262,12 @@ const Kurslar = () => {
                     </div>
                     <div className="flex gap-1 flex-shrink-0">
                       <button
-                        onClick={() => handleDelete(course.id)}
-                        className="text-gray-400 hover:text-red-500 transition-colors"
+                        onClick={() => handleDeleteClick(course.id)}
+                        className="text-red-400 hover:text-red-600 hover:bg-white rounded p-1 transition-colors"
                       >
                         <Delete sx={{ fontSize: 16 }} />
                       </button>
-                      <button className="text-gray-400 hover:text-[#7c3aed] transition-colors">
+                      <button className="text-gray-400 hover:text-blue-500 hover:bg-white rounded p-1 transition-colors">
                         <Edit sx={{ fontSize: 16 }} />
                       </button>
                     </div>
@@ -374,6 +438,13 @@ const Kurslar = () => {
           </button>
         </div>
       </div>
+
+      <DeleteConfirmModal
+        isOpen={!!deleteItem}
+        onClose={() => setDeleteItem(null)}
+        onConfirm={confirmDelete}
+        title="Kursni o'chirish"
+      />
     </div>
   );
 };

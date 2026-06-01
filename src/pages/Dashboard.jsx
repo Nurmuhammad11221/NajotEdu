@@ -1,17 +1,47 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Class, MenuBook, PeopleAlt, CardGiftcard } from "@mui/icons-material";
 import { ExpandMore, ExpandLess } from "@mui/icons-material";
-
-const stats = [
-  { icon: <Class sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Sinflar", value: 0 },
-  { icon: <MenuBook sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Fanlar", value: 0 },
-  { icon: <PeopleAlt sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Talabalar", value: 1 },
-  { icon: <CardGiftcard sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Sovg'alar", value: 3 },
-  { icon: <PeopleAlt sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "O'qituvchilar", value: 0 },
-];
+import { api } from "../utils/api";
 
 const Dashboard = () => {
+  const [stats, setStats] = useState([
+    { icon: <Class sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Sinflar", value: 0 },
+    { icon: <MenuBook sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Fanlar", value: 0 },
+    { icon: <PeopleAlt sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Talabalar", value: 0 },
+    { icon: <CardGiftcard sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Sovg'alar", value: 0 },
+    { icon: <PeopleAlt sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "O'qituvchilar", value: 0 },
+  ]);
   const [scheduleOpen, setScheduleOpen] = useState(true);
+
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        const [groupsData, coursesData, studentsData, teachersData] = await Promise.all([
+          api.getGroups(),
+          api.getCourses(),
+          api.getStudents(),
+          api.getTeachers(),
+        ]);
+
+        const groups = Array.isArray(groupsData) ? groupsData : groupsData.data || [];
+        const courses = Array.isArray(coursesData) ? coursesData : coursesData.data || [];
+        const students = Array.isArray(studentsData) ? studentsData : studentsData.data || [];
+        const teachers = Array.isArray(teachersData) ? teachersData : teachersData.data || [];
+
+        setStats([
+          { icon: <Class sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Sinflar", value: groups.length },
+          { icon: <MenuBook sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Fanlar", value: courses.length },
+          { icon: <PeopleAlt sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Talabalar", value: students.length },
+          { icon: <CardGiftcard sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Sovg'alar", value: 0 },
+          { icon: <PeopleAlt sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "O'qituvchilar", value: teachers.length },
+        ]);
+      } catch (err) {
+        console.error("Dashboard statistikani yuklashda xatolik:", err);
+      }
+    };
+
+    loadStats();
+  }, []);
 
   return (
     <div className="p-6">

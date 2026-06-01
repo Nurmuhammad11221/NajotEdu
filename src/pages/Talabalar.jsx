@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   Add, Close, Search, ArrowBack, ArrowForward, MoreVert
 } from "@mui/icons-material";
+import { api } from "../utils/api";
 
 const sampleStudents = [
   {
@@ -59,33 +60,89 @@ const Talabalar = () => {
     file: null
   });
 
-  useEffect(() => {
-    const stored = localStorage.getItem("lms_students");
-    if (stored) {
-      setStudents(JSON.parse(stored));
-    } else {
-      localStorage.setItem("lms_students", JSON.stringify(sampleStudents));
+  const loadStudents = async () => {
+    try {
+      const data = await api.getStudents();
+      const list = Array.isArray(data) ? data : data.data || [];
+      const formatted = list.map((s, idx) => ({
+        id: s.id || idx + 1,
+        name: s.full_name || s.name || "Ismsiz talaba",
+        avatarColor: s.photo ? `https://najot-edu.softwareengineer.uz/${s.photo}` : "bg-purple-100 text-purple-600",
+        guruh: Array.isArray(s.groups) ? s.groups.map(g => typeof g === "object" ? g.name : g) : ["n105"],
+        phone: s.phone || "+998(00)000-00-00",
+        email: s.email || `${s.name ? s.name.replace(/\s+/g, "").toLowerCase() : "student"}@gmail.com`,
+        tug: s.birth_date || "2000-01-01",
+        manzil: s.address || "Noma'lum",
+      }));
+      if (formatted.length > 0) {
+        setStudents(formatted);
+        localStorage.setItem("lms_students", JSON.stringify(formatted));
+      } else {
+        useFallbackStudents();
+      }
+    } catch (err) {
+      console.warn("Backend API error, using localStorage fallback:", err);
+      useFallbackStudents();
+    }
+  };
+
+  const useFallbackStudents = () => {
+    try {
+      const stored = localStorage.getItem("lms_students");
+      if (stored) {
+        setStudents(JSON.parse(stored));
+      } else {
+        localStorage.setItem("lms_students", JSON.stringify(sampleStudents));
+        setStudents(sampleStudents);
+      }
+    } catch (e) {
       setStudents(sampleStudents);
     }
+  };
+
+  useEffect(() => {
+    loadStudents();
   }, []);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!form.fio) return;
-    const newStudent = {
-      id: Date.now(),
-      name: form.fio,
-      guruh: ["n105"],
-      phone: form.phone,
-      email: form.mail,
-      tug: form.tug || "01.01.2000",
-      manzil: form.manzil || "Noma'lum",
-      avatarColor: "bg-gray-100 text-gray-600"
-    };
-    const updated = [...students, newStudent];
-    setStudents(updated);
-    localStorage.setItem("lms_students", JSON.stringify(updated));
-    setShowPanel(false);
-    setForm({ phone: "+998", mail: "", fio: "", tug: "", manzil: "", parol: "", file: null });
+    try {
+      const fd = new FormData();
+      fd.append("full_name", form.fio);
+      fd.append("email", form.mail || `${form.fio.replace(/\s+/g, "").toLowerCase()}@gmail.com`);
+      fd.append("password", form.parol || "Student123!");
+      fd.append("phone", form.phone || "+998990000000");
+      fd.append("address", form.manzil || "Toshkent");
+      fd.append("birth_date", form.tug || "2000-01-01");
+      fd.append("groups", JSON.stringify([1]));
+      
+      if (form.file) {
+        fd.append("photo", form.file);
+      }
+      
+      await api.createStudent(fd);
+      loadStudents();
+      setShowPanel(false);
+      setForm({ phone: "+998", mail: "", fio: "", tug: "", manzil: "", parol: "", file: null });
+    } catch (err) {
+      console.error(err);
+      // Fallback local adding
+      const newStudent = {
+        id: Date.now(),
+        name: form.fio,
+        guruh: ["n105"],
+        phone: form.phone,
+        email: form.mail,
+        tug: form.tug || "01.01.2000",
+        manzil: form.manzil || "Noma'lum",
+        avatarColor: "bg-gray-100 text-gray-600"
+      };
+      const updated = [...students, newStudent];
+      setStudents(updated);
+      localStorage.setItem("lms_students", JSON.stringify(updated));
+      setShowPanel(false);
+      setForm({ phone: "+998", mail: "", fio: "", tug: "", manzil: "", parol: "", file: null });
+    }
   };
 
   return (
@@ -137,15 +194,19 @@ const Talabalar = () => {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${s.avatarColor}`}>
-                        {s.name.charAt(0)}
-                      </div>
+                      {s.avatarColor && s.avatarColor.startsWith("http") ? (
+                        <img src={s.avatarColor} alt="" className="w-8 h-8 rounded-full object-cover border border-gray-200" />
+                      ) : (
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${s.avatarColor || "bg-purple-100 text-purple-600"}`}>
+                          {s.name.charAt(0)}
+                        </div>
+                      )}
                       <span className="text-[13px] font-semibold text-gray-800">{s.name}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex gap-1 flex-wrap">
-                      {s.guruh.map((g, i) => (
+                      {(s.guruh || []).map((g, i) => (
                         <span key={i} className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded font-medium">{g}</span>
                       ))}
                     </div>

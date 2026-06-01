@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Add, Close, MoreVert, Search, Class } from "@mui/icons-material";
 import PeopleIcon from "@mui/icons-material/People";
 import SchoolIcon from "@mui/icons-material/School";
+import { api } from "../utils/api";
 
 const sampleGroups = [
   {
@@ -60,6 +62,7 @@ const defaultRooms = [
 ];
 
 const Guruhlar = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("Guruhlar");
   const [groups, setGroups] = useState([]);
   const [showPanel, setShowPanel] = useState(false);
@@ -69,12 +72,39 @@ const Guruhlar = () => {
   const [teachers, setTeachers] = useState([]);
   const [students, setStudents] = useState([]);
 
-  useEffect(() => {
+  const loadGroups = async () => {
     try {
-      // Groups
-      const storedGroups = localStorage.getItem("lms_groups");
-      if (storedGroups) {
-        setGroups(JSON.parse(storedGroups));
+      const data = await api.getGroups();
+      const list = Array.isArray(data) ? data : data.data || [];
+      const formatted = list.map((g, idx) => ({
+        id: g.id || idx + 1,
+        status: true,
+        nomi: g.name || "Guruh",
+        kurs: g.course?.name || g.course?.title || "Dasturlash",
+        davomiyligi: "6 oy",
+        vaqt: g.start_time || "09:00",
+        kunlar: Array.isArray(g.week_day) ? g.week_day.map(w => w.substring(0, 3)).join(", ") : "Dushanba",
+        xona: g.room?.name || "Xona",
+        oqituvchi: Array.isArray(g.teachers) && g.teachers[0] ? g.teachers[0].full_name || g.teachers[0].name : "Mohirbek",
+        talabalar: Array.isArray(g.students) ? g.students.length : 0,
+      }));
+      if (formatted.length > 0) {
+        setGroups(formatted);
+        localStorage.setItem("lms_groups", JSON.stringify(formatted));
+      } else {
+        useFallbackGroups();
+      }
+    } catch (err) {
+      console.warn("Backend API error, using localStorage fallback:", err);
+      useFallbackGroups();
+    }
+  };
+
+  const useFallbackGroups = () => {
+    try {
+      const stored = localStorage.getItem("lms_groups");
+      if (stored) {
+        setGroups(JSON.parse(stored));
       } else {
         localStorage.setItem("lms_groups", JSON.stringify(sampleGroups));
         setGroups(sampleGroups);
@@ -82,9 +112,10 @@ const Guruhlar = () => {
     } catch (e) {
       setGroups(sampleGroups);
     }
+  };
 
+  const useFallbackRooms = () => {
     try {
-      // Rooms
       const storedRooms = localStorage.getItem("lms_rooms");
       if (storedRooms) {
         setRooms(JSON.parse(storedRooms));
@@ -95,53 +126,73 @@ const Guruhlar = () => {
     } catch (e) {
       setRooms(defaultRooms);
     }
+  };
 
+  const loadAllFormData = async () => {
+    // Rooms
     try {
-      // Courses
-      const storedCourses = localStorage.getItem("lms_courses");
-      if (storedCourses) {
-        setCourses(JSON.parse(storedCourses));
+      const data = await api.getRooms();
+      const list = Array.isArray(data) ? data : data.data || [];
+      if (list.length > 0) {
+        setRooms(list);
+        localStorage.setItem("lms_rooms", JSON.stringify(list));
       } else {
-        const defaultCourses = [
-          { id: 1, title: "Frontend Bootcamp" },
-          { id: 2, title: "Backend Node.js" }
-        ];
-        localStorage.setItem("lms_courses", JSON.stringify(defaultCourses));
-        setCourses(defaultCourses);
+        useFallbackRooms();
       }
-    } catch (e) {
-      setCourses([]);
+    } catch (err) {
+      useFallbackRooms();
     }
 
+    // Courses
     try {
-      // Teachers
-      const storedTeachers = localStorage.getItem("lms_teachers");
-      if (storedTeachers) {
-        setTeachers(JSON.parse(storedTeachers));
-      } else {
-        const defaultTeachers = [
-          { id: 1, name: "Mohirbek" },
-          { id: 2, name: "Diyorbek" }
-        ];
-        localStorage.setItem("lms_teachers", JSON.stringify(defaultTeachers));
-        setTeachers(defaultTeachers);
+      const data = await api.getCourses();
+      const list = Array.isArray(data) ? data : data.data || [];
+      if (list.length > 0) {
+        setCourses(list.map(c => ({ id: c.id, title: c.name || c.title })));
       }
-    } catch (e) {
-      setTeachers([]);
+    } catch (err) {
+      // Use local courses
+      const stored = localStorage.getItem("lms_courses");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setCourses(parsed.map(c => ({ id: c.id, title: c.title || c.name })));
+      }
     }
 
+    // Teachers
     try {
-      // Students
-      const storedStudents = localStorage.getItem("lms_students");
-      if (storedStudents) {
-        setStudents(JSON.parse(storedStudents));
-      } else {
-        localStorage.setItem("lms_students", JSON.stringify(sampleStudents));
-        setStudents(sampleStudents);
+      const data = await api.getTeachers();
+      const list = Array.isArray(data) ? data : data.data || [];
+      if (list.length > 0) {
+        setTeachers(list.map(t => ({ id: t.id, name: t.full_name || t.name })));
       }
-    } catch (e) {
-      setStudents(sampleStudents);
+    } catch (err) {
+      const stored = localStorage.getItem("lms_teachers");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setTeachers(parsed.map(t => ({ id: t.id, name: t.name })));
+      }
     }
+
+    // Students
+    try {
+      const data = await api.getStudents();
+      const list = Array.isArray(data) ? data : data.data || [];
+      if (list.length > 0) {
+        setStudents(list.map(s => ({ id: s.id, name: s.full_name || s.name })));
+      }
+    } catch (err) {
+      const stored = localStorage.getItem("lms_students");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setStudents(parsed.map(s => ({ id: s.id, name: s.name })));
+      }
+    }
+  };
+
+  useEffect(() => {
+    loadGroups();
+    loadAllFormData();
   }, [showPanel]); // Re-load when the create group panel opens/closes so newly created records in other pages are updated!
 
   const [form, setForm] = useState({
@@ -182,25 +233,57 @@ const Guruhlar = () => {
     localStorage.setItem("lms_groups", JSON.stringify(updated));
   };
 
-  const handleSaveGroup = () => {
+  const handleSaveGroup = async () => {
     if (!form.nomi) return;
-    const newGroup = {
-      id: Date.now(),
-      status: true,
-      nomi: form.nomi,
-      kurs: form.kurs || "Noma'lum",
-      davomiyligi: "6 oy", // default
-      vaqt: form.vaqt,
-      kunlar: form.kunlar.map(k => k.substring(0, 2)).join(", ") || "Belgilanmagan",
-      xona: form.xona || "Noma'lum",
-      oqituvchi: form.oqituvchi || "Noma'lum",
-      talabalar: form.talabalarIds.length,
-    };
-    const updated = [...groups, newGroup];
-    setGroups(updated);
-    localStorage.setItem("lms_groups", JSON.stringify(updated));
-    setShowPanel(false);
-    setForm({ nomi: "", kurs: "", xona: "", kunlar: [], vaqt: "09:00", sana: "", tavsif: "", oqituvchi: "", talabalarIds: [] });
+    try {
+      const weekdayMap = {
+        "Dushanba": "MONDAY",
+        "Seshanba": "TUESDAY",
+        "Chorshanba": "WEDNESDAY",
+        "Payshanba": "THURSDAY",
+        "Juma": "FRIDAY",
+        "Shanba": "SATURDAY",
+        "Yakshanba": "SUNDAY"
+      };
+      
+      const payload = {
+        name: form.nomi,
+        description: form.tavsif || "Guruh tavsifi",
+        course_id: Number(form.kurs) || 1,
+        teachers: form.oqituvchi ? [Number(form.oqituvchi)] : [1],
+        students: form.talabalarIds.map(Number),
+        room_id: Number(form.xona) || 1,
+        start_date: form.sana || new Date().toISOString().split("T")[0],
+        week_day: form.kunlar.map(k => weekdayMap[k] || "MONDAY"),
+        start_time: form.vaqt || "09:00",
+        max_student: 20
+      };
+      
+      await api.createGroup(payload);
+      loadGroups();
+      setShowPanel(false);
+      setForm({ nomi: "", kurs: "", xona: "", kunlar: [], vaqt: "09:00", sana: "", tavsif: "", oqituvchi: "", talabalarIds: [] });
+    } catch (err) {
+      console.error(err);
+      // Fallback local adding
+      const newGroup = {
+        id: Date.now(),
+        status: true,
+        nomi: form.nomi,
+        kurs: form.kurs || "Noma'lum",
+        davomiyligi: "6 oy", // default
+        vaqt: form.vaqt,
+        kunlar: form.kunlar.map(k => k.substring(0, 2)).join(", ") || "Belgilanmagan",
+        xona: form.xona || "Noma'lum",
+        oqituvchi: form.oqituvchi || "Noma'lum",
+        talabalar: form.talabalarIds.length,
+      };
+      const updated = [...groups, newGroup];
+      setGroups(updated);
+      localStorage.setItem("lms_groups", JSON.stringify(updated));
+      setShowPanel(false);
+      setForm({ nomi: "", kurs: "", xona: "", kunlar: [], vaqt: "09:00", sana: "", tavsif: "", oqituvchi: "", talabalarIds: [] });
+    }
   };
 
   return (
@@ -290,11 +373,15 @@ const Guruhlar = () => {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {groups.map((g) => (
-                <tr key={g.id} className="hover:bg-gray-50/50 transition-colors">
+                <tr 
+                  key={g.id} 
+                  onClick={() => navigate(`/dashboard/groups/${g.id}`)}
+                  className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                >
                   <td className="px-4 py-4">
                     <div className="flex items-center justify-center gap-2">
                       <button
-                        onClick={() => toggleStatus(g.id)}
+                        onClick={(e) => { e.stopPropagation(); toggleStatus(g.id); }}
                         className={`w-9 h-5 rounded-full relative transition-colors ${g.status ? 'bg-[#7c3aed]' : 'bg-gray-300'}`}
                       >
                         <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-[3px] transition-all ${g.status ? 'left-[18px]' : 'left-1'}`}></div>
@@ -364,7 +451,7 @@ const Guruhlar = () => {
             >
               <option value="">Tanlang</option>
               {courses.map((course) => (
-                <option key={course.id} value={course.title}>
+                <option key={course.id} value={course.id}>
                   {course.title}
                 </option>
               ))}
@@ -380,7 +467,7 @@ const Guruhlar = () => {
             >
               <option value="">Tanlang</option>
               {rooms.map((room) => (
-                <option key={room.id} value={room.name}>
+                <option key={room.id} value={room.id}>
                   {room.name} ({room.center})
                 </option>
               ))}
@@ -444,7 +531,7 @@ const Guruhlar = () => {
             >
               <option value="">Tanlang</option>
               {teachers.map((t) => (
-                <option key={t.id} value={t.name}>
+                <option key={t.id} value={t.id}>
                   {t.name}
                 </option>
               ))}

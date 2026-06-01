@@ -17,13 +17,7 @@ const defaultRooms = [
 const tabs = [
   { label: "Kurslar", path: "/dashboard/kurslar" },
   { label: "Xonalar", path: "/dashboard/xonalar" },
-  { label: "Filiallar", disabled: true },
-  { label: "Xodimlar", disabled: true },
-  { label: "Sabablar", disabled: true },
-  { label: "Rollar", disabled: true },
-  { label: "Coin", disabled: true },
-  { label: "Xabar yuborish", disabled: true },
-  { label: "Tekshiruv", disabled: true }
+  { label: "Xodimlar", path: "/dashboard/xodimlar" },
 ];
 
 const subTabs = [
@@ -36,47 +30,111 @@ const subTabs = [
   "Arxiv",
 ];
 
+import { api } from "../utils/api";
+import DeleteConfirmModal from "../components/DeleteConfirmModal";
+
 const Xonalar = () => {
   const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
   const [activeCenter, setActiveCenter] = useState("AiCoder markazi");
   const [showPanel, setShowPanel] = useState(false);
   const [form, setForm] = useState({ name: "", capacity: "" });
+  const [deleteItem, setDeleteItem] = useState(null);
 
-  useEffect(() => {
-    const stored = localStorage.getItem("lms_rooms");
-    if (stored) {
-      setRooms(JSON.parse(stored));
-    } else {
-      localStorage.setItem("lms_rooms", JSON.stringify(defaultRooms));
-      setRooms(defaultRooms);
+  const loadRooms = async () => {
+    try {
+      const data = await api.getRooms();
+      const list = Array.isArray(data) ? data : data.data || [];
+      const formatted = list.map((r, idx) => ({
+        id: r.id || idx + 1,
+        name: r.name || "Xona",
+        capacity: r.capacity || 20,
+        center: r.center || "AiCoder markazi",
+      }));
+      if (formatted.length > 0) {
+        setRooms(formatted);
+        localStorage.setItem("lms_rooms", JSON.stringify(formatted));
+      } else {
+        useFallbackRooms();
+      }
+    } catch (err) {
+      console.warn("Backend API error, using localStorage fallback:", err);
+      useFallbackRooms();
     }
-  }, []);
-
-  const handleSave = () => {
-    if (!form.name || !form.capacity) return;
-    const newRoom = {
-      id: Date.now(),
-      name: form.name,
-      capacity: parseInt(form.capacity),
-      center: activeCenter,
-    };
-    const updated = [...rooms, newRoom];
-    setRooms(updated);
-    localStorage.setItem("lms_rooms", JSON.stringify(updated));
-    setShowPanel(false);
-    setForm({ name: "", capacity: "" });
   };
 
-  const handleDelete = (id) => {
-    const updated = rooms.filter((r) => r.id !== id);
-    setRooms(updated);
-    localStorage.setItem("lms_rooms", JSON.stringify(updated));
+  const useFallbackRooms = () => {
+    try {
+      const stored = localStorage.getItem("lms_rooms");
+      if (stored) {
+        setRooms(JSON.parse(stored));
+      } else {
+        localStorage.setItem("lms_rooms", JSON.stringify(defaultRooms));
+        setRooms(defaultRooms);
+      }
+    } catch (e) {
+      setRooms(defaultRooms);
+    }
+  };
+
+  useEffect(() => {
+    loadRooms();
+  }, []);
+
+  const handleSave = async () => {
+    if (!form.name || !form.capacity) return;
+    try {
+      const payload = {
+        name: form.name,
+        capacity: Number(form.capacity)
+      };
+      await api.createRoom(payload);
+      loadRooms();
+      setShowPanel(false);
+      setForm({ name: "", capacity: "" });
+    } catch (err) {
+      console.error(err);
+      // Fallback local adding
+      const newRoom = {
+        id: Date.now(),
+        name: form.name,
+        capacity: parseInt(form.capacity),
+        center: activeCenter,
+      };
+      const updated = [...rooms, newRoom];
+      setRooms(updated);
+      localStorage.setItem("lms_rooms", JSON.stringify(updated));
+      setShowPanel(false);
+      setForm({ name: "", capacity: "" });
+    }
+  };
+
+  const handleDeleteClick = (id) => {
+    setDeleteItem(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteItem) return;
+    try {
+      if (api.deleteRoom) {
+        await api.deleteRoom(deleteItem);
+      }
+      const updated = rooms.filter((r) => r.id !== deleteItem);
+      setRooms(updated);
+      localStorage.setItem("lms_rooms", JSON.stringify(updated));
+    } catch (e) {
+      console.error("Xonani o'chirishda xatolik:", e);
+      // Fallback local delete
+      const updated = rooms.filter((r) => r.id !== deleteItem);
+      setRooms(updated);
+      localStorage.setItem("lms_rooms", JSON.stringify(updated));
+    } finally {
+      setDeleteItem(null);
+    }
   };
 
   const handleRefresh = () => {
-    localStorage.setItem("lms_rooms", JSON.stringify(defaultRooms));
-    setRooms(defaultRooms);
+    loadRooms();
   };
 
   return (
@@ -147,25 +205,22 @@ const Xonalar = () => {
         <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
           <div className="grid grid-cols-4 gap-4">
             {rooms
-              .filter((r) => r.center === activeCenter)
+              .filter((r) => !r.center || r.center === activeCenter)
               .map((room) => (
-                <div
-                  key={room.id}
-                  className="bg-gray-50/50 hover:bg-white border border-gray-100 hover:border-purple-100 rounded-xl p-5 flex items-center justify-between transition-all hover:shadow-sm"
-                >
+                  <div
+                    key={room.id}
+                    className="group bg-gray-50/50 hover:bg-white border border-gray-100 hover:border-purple-100 rounded-xl p-5 flex items-center justify-between transition-all hover:shadow-sm"
+                  >
                   <div>
                     <h3 className="font-bold text-gray-800 text-[14px]">{room.name}</h3>
                     <p className="text-[12px] text-gray-400 mt-1 font-semibold">Sig'imi: {room.capacity}</p>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button 
-                      onClick={() => handleDelete(room.id)}
-                      className="w-8 h-8 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center"
-                    >
-                      <Delete sx={{ fontSize: 16 }} />
+                  <div className="flex justify-end gap-3 transition-opacity">
+                    <button onClick={() => handleDeleteClick(room.id)} className="text-red-400 hover:text-red-600">
+                      <Delete sx={{ fontSize: 18 }} />
                     </button>
-                    <button className="w-8 h-8 rounded-lg text-gray-400 hover:text-[#7c3aed] hover:bg-purple-50 transition-all flex items-center justify-center">
-                      <Edit sx={{ fontSize: 16 }} />
+                    <button className="text-blue-500 hover:text-blue-700">
+                      <Edit sx={{ fontSize: 18 }} />
                     </button>
                   </div>
                 </div>
@@ -174,7 +229,6 @@ const Xonalar = () => {
         </div>
       </div>
 
-      {/* ===== ADD ROOM PANEL ===== */}
       {showPanel && (
         <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => setShowPanel(false)} />
       )}
@@ -233,6 +287,13 @@ const Xonalar = () => {
           </button>
         </div>
       </div>
+
+      <DeleteConfirmModal
+        isOpen={!!deleteItem}
+        onClose={() => setDeleteItem(null)}
+        onConfirm={confirmDelete}
+        title="Xonani o'chirish"
+      />
     </div>
   );
 };

@@ -4,6 +4,8 @@ import {
   FilterList, Search, Remove, CloudDownload, Archive,
   ArrowBack, ArrowForward, Close
 } from "@mui/icons-material";
+import { api } from "../utils/api";
+import DeleteConfirmModal from "../components/DeleteConfirmModal";
 
 const sampleTeachers = Array.from({ length: 11 }, (_, i) => ({
   id: i + 1,
@@ -21,9 +23,36 @@ const Oqituvchilar = () => {
   const [teachers, setTeachers] = useState([]);
   const [page, setPage] = useState(1);
   const [showPanel, setShowPanel] = useState(false);
-  const [newTeacher, setNewTeacher] = useState({ name: "", phone: "" });
+  const [newTeacher, setNewTeacher] = useState({ name: "", phone: "", email: "", password: "", address: "" });
+  const [deleteItem, setDeleteItem] = useState(null);
 
-  useEffect(() => {
+  const loadTeachers = async () => {
+    try {
+      const data = await api.getTeachers();
+      const list = Array.isArray(data) ? data : data.data || [];
+      const formatted = list.map((t, idx) => ({
+        id: t.id || idx + 1,
+        name: t.full_name || t.name || "Ismsiz o'qituvchi",
+        avatar: t.photo ? `https://najot-edu.softwareengineer.uz/${t.photo}` : `https://i.pravatar.cc/32?img=${(t.id || idx) % 50 + 10}`,
+        guruh: Array.isArray(t.groups) ? t.groups.map(g => typeof g === "object" ? g.name : g) : ["Yangi o'qituvchi"],
+        phone: t.phone || "+998(00)000-00-00",
+        tug: t.birth_date || "01 Jan 1990",
+        yaratilgan: "Faol",
+        coin: t.coin || 0,
+      }));
+      if (formatted.length > 0) {
+        setTeachers(formatted);
+        localStorage.setItem("lms_teachers", JSON.stringify(formatted));
+      } else {
+        useFallbackTeachers();
+      }
+    } catch (err) {
+      console.warn("Backend API error, using localStorage fallback:", err);
+      useFallbackTeachers();
+    }
+  };
+
+  const useFallbackTeachers = () => {
     try {
       const stored = localStorage.getItem("lms_teachers");
       if (stored) {
@@ -33,9 +62,12 @@ const Oqituvchilar = () => {
         setTeachers(sampleTeachers);
       }
     } catch (e) {
-      localStorage.setItem("lms_teachers", JSON.stringify(sampleTeachers));
       setTeachers(sampleTeachers);
     }
+  };
+
+  useEffect(() => {
+    loadTeachers();
   }, []);
 
   const toggleSelect = (id) => {
@@ -47,11 +79,30 @@ const Oqituvchilar = () => {
     setSelected(selected.length === teachers.length ? [] : teachers.map((t) => t.id));
   };
 
-  const handleDelete = (id) => {
-    const updated = teachers.filter((t) => t.id !== id);
-    setTeachers(updated);
-    localStorage.setItem("lms_teachers", JSON.stringify(updated));
-    setSelected((prev) => prev.filter((x) => x !== id));
+  const handleDeleteClick = (id) => {
+    setDeleteItem(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteItem) return;
+    try {
+      if (api.deleteTeacher) {
+        await api.deleteTeacher(deleteItem);
+      }
+      const updated = teachers.filter((t) => t.id !== deleteItem);
+      setTeachers(updated);
+      localStorage.setItem("lms_teachers", JSON.stringify(updated));
+      setSelected((prev) => prev.filter((x) => x !== deleteItem));
+    } catch (e) {
+      console.error("O'qituvchini o'chirishda xatolik:", e);
+      // Fallback local delete
+      const updated = teachers.filter((t) => t.id !== deleteItem);
+      setTeachers(updated);
+      localStorage.setItem("lms_teachers", JSON.stringify(updated));
+      setSelected((prev) => prev.filter((x) => x !== deleteItem));
+    } finally {
+      setDeleteItem(null);
+    }
   };
 
   const handleDeleteSelected = () => {
@@ -61,23 +112,39 @@ const Oqituvchilar = () => {
     setSelected([]);
   };
 
-  const handleAddTeacher = () => {
+  const handleAddTeacher = async () => {
     if (!newTeacher.name) return;
-    const teacher = {
-      id: Date.now(),
-      name: newTeacher.name,
-      avatar: `https://i.pravatar.cc/32?img=${Math.floor(Math.random() * 50)}`,
-      guruh: ["Yangi"],
-      phone: newTeacher.phone || "+998(00)0000000",
-      tug: "01 Jan 2024",
-      yaratilgan: "01 Jan 2024",
-      coin: 0,
-    };
-    const updated = [teacher, ...teachers];
-    setTeachers(updated);
-    localStorage.setItem("lms_teachers", JSON.stringify(updated));
-    setNewTeacher({ name: "", phone: "" });
-    setShowPanel(false);
+    try {
+      const fd = new FormData();
+      fd.append("full_name", newTeacher.name);
+      fd.append("phone", newTeacher.phone || "+998990000000");
+      fd.append("email", newTeacher.email || `${newTeacher.name.replace(/\s+/g, "").toLowerCase() || "teacher"}@gmail.com`);
+      fd.append("password", newTeacher.password || "Teacher123!");
+      fd.append("address", newTeacher.address || "Toshkent");
+      
+      await api.createTeacher(fd);
+      loadTeachers();
+      setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" });
+      setShowPanel(false);
+    } catch (err) {
+      console.error(err);
+      // Fallback local adding
+      const teacher = {
+        id: Date.now(),
+        name: newTeacher.name,
+        avatar: `https://i.pravatar.cc/32?img=${Math.floor(Math.random() * 50)}`,
+        guruh: ["Yangi"],
+        phone: newTeacher.phone || "+998(00)0000000",
+        tug: "01 Jan 2024",
+        yaratilgan: "01 Jan 2024",
+        coin: 0,
+      };
+      const updated = [teacher, ...teachers];
+      setTeachers(updated);
+      localStorage.setItem("lms_teachers", JSON.stringify(updated));
+      setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" });
+      setShowPanel(false);
+    }
   };
 
   return (
@@ -265,6 +332,36 @@ const Oqituvchilar = () => {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:border-[#7c3aed] outline-none"
               />
             </div>
+            <div>
+              <label className="block text-[13px] font-semibold text-gray-700 mb-1.5">E-pochta (Email)</label>
+              <input 
+                type="email" 
+                placeholder="teacher@example.com"
+                value={newTeacher.email}
+                onChange={(e) => setNewTeacher({...newTeacher, email: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:border-[#7c3aed] outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[13px] font-semibold text-gray-700 mb-1.5">Tizimga kirish paroli</label>
+              <input 
+                type="password" 
+                placeholder="Parolni kiriting"
+                value={newTeacher.password}
+                onChange={(e) => setNewTeacher({...newTeacher, password: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:border-[#7c3aed] outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[13px] font-semibold text-gray-700 mb-1.5">Manzil (Address)</label>
+              <input 
+                type="text" 
+                placeholder="Toshkent shahri..."
+                value={newTeacher.address}
+                onChange={(e) => setNewTeacher({...newTeacher, address: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:border-[#7c3aed] outline-none"
+              />
+            </div>
           </div>
 
           <div className="pt-6 border-t border-gray-100 flex gap-3">
@@ -277,6 +374,13 @@ const Oqituvchilar = () => {
           </div>
         </div>
       </div>
+
+      <DeleteConfirmModal
+        isOpen={!!deleteItem}
+        onClose={() => setDeleteItem(null)}
+        onConfirm={confirmDelete}
+        title="O'qituvchini o'chirish"
+      />
     </div>
   );
 };
