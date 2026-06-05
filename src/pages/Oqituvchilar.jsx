@@ -25,30 +25,51 @@ const Oqituvchilar = () => {
   const [showPanel, setShowPanel] = useState(false);
   const [newTeacher, setNewTeacher] = useState({ name: "", phone: "", email: "", password: "", address: "" });
   const [deleteItem, setDeleteItem] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+  const [archiveTeachers, setArchiveTeachers] = useState([]);
+  const [showArchive, setShowArchive] = useState(false);
+
+  const formatTeacher = (t, idx) => ({
+    id: t.id || idx + 1,
+    name: t.full_name || t.name || "Ismsiz o'qituvchi",
+    avatar: t.photo ? `https://najot-edu.softwareengineer.uz/${t.photo}` : `https://i.pravatar.cc/32?img=${(t.id || idx) % 50 + 10}`,
+    guruh: Array.isArray(t.groups) ? t.groups.map(g => typeof g === "object" ? g.name : g) : ["Yangi o'qituvchi"],
+    phone: t.phone || "+998(00)000-00-00",
+    email: t.email || "",
+    address: t.address || "",
+    tug: t.birth_date || "01 Jan 1990",
+    yaratilgan: "Faol",
+    coin: t.coin || 0,
+  });
 
   const loadTeachers = async () => {
     try {
       const data = await api.getTeachers();
       const list = Array.isArray(data) ? data : data.data || [];
-      const formatted = list.map((t, idx) => ({
-        id: t.id || idx + 1,
-        name: t.full_name || t.name || "Ismsiz o'qituvchi",
-        avatar: t.photo ? `https://najot-edu.softwareengineer.uz/${t.photo}` : `https://i.pravatar.cc/32?img=${(t.id || idx) % 50 + 10}`,
-        guruh: Array.isArray(t.groups) ? t.groups.map(g => typeof g === "object" ? g.name : g) : ["Yangi o'qituvchi"],
-        phone: t.phone || "+998(00)000-00-00",
-        tug: t.birth_date || "01 Jan 1990",
-        yaratilgan: "Faol",
-        coin: t.coin || 0,
-      }));
+      const formatted = list.map(formatTeacher);
       if (formatted.length > 0) {
         setTeachers(formatted);
         localStorage.setItem("lms_teachers", JSON.stringify(formatted));
       } else {
-        useFallbackTeachers();
+        setTeachers([]);
       }
     } catch (err) {
-      console.warn("Backend API error, using localStorage fallback:", err);
-      useFallbackTeachers();
+      console.warn("Backend API error:", err);
+      setTeachers([]);
+    }
+  };
+
+  const loadArchiveTeachers = async () => {
+    try {
+      const data = await api.getArchiveTeachers();
+      const list = Array.isArray(data) ? data : data.data || [];
+      const formatted = list.map(formatTeacher);
+      setArchiveTeachers(formatted);
+      localStorage.setItem("lms_teachers_archive", JSON.stringify(formatted));
+    } catch (err) {
+      console.warn("Archive API error:", err);
+      const stored = localStorage.getItem("lms_teachers_archive");
+      setArchiveTeachers(stored ? JSON.parse(stored) : []);
     }
   };
 
@@ -68,6 +89,7 @@ const Oqituvchilar = () => {
 
   useEffect(() => {
     loadTeachers();
+    loadArchiveTeachers();
   }, []);
 
   const toggleSelect = (id) => {
@@ -90,26 +112,39 @@ const Oqituvchilar = () => {
         await api.deleteTeacher(deleteItem);
       }
       const updated = teachers.filter((t) => t.id !== deleteItem);
+      const deletedTeacher = teachers.find((t) => t.id === deleteItem);
+      const archived = deletedTeacher ? [deletedTeacher, ...archiveTeachers] : archiveTeachers;
       setTeachers(updated);
+      setArchiveTeachers(archived);
       localStorage.setItem("lms_teachers", JSON.stringify(updated));
+      localStorage.setItem("lms_teachers_archive", JSON.stringify(archived));
       setSelected((prev) => prev.filter((x) => x !== deleteItem));
+      loadArchiveTeachers();
     } catch (e) {
       console.error("O'qituvchini o'chirishda xatolik:", e);
-      // Fallback local delete
-      const updated = teachers.filter((t) => t.id !== deleteItem);
-      setTeachers(updated);
-      localStorage.setItem("lms_teachers", JSON.stringify(updated));
-      setSelected((prev) => prev.filter((x) => x !== deleteItem));
+      alert(e.message || "O'qituvchini o'chirishda xatolik yuz berdi");
     } finally {
       setDeleteItem(null);
     }
   };
 
-  const handleDeleteSelected = () => {
-    const updated = teachers.filter((t) => !selected.includes(t.id));
-    setTeachers(updated);
-    localStorage.setItem("lms_teachers", JSON.stringify(updated));
-    setSelected([]);
+  const handleDeleteSelected = async () => {
+    try {
+      await Promise.all(selected.map((id) => api.deleteTeacher(id)));
+      const selectedTeachers = teachers.filter((t) => selected.includes(t.id));
+      const updated = teachers.filter((t) => !selected.includes(t.id));
+      const archived = [...selectedTeachers, ...archiveTeachers];
+      setTeachers(updated);
+      setArchiveTeachers(archived);
+      localStorage.setItem("lms_teachers", JSON.stringify(updated));
+      localStorage.setItem("lms_teachers_archive", JSON.stringify(archived));
+      await loadTeachers();
+      await loadArchiveTeachers();
+      setSelected([]);
+    } catch (e) {
+      console.error("Tanlangan o'qituvchilarni o'chirishda xatolik:", e);
+      alert(e.message || "Tanlangan o'qituvchilarni o'chirishda xatolik yuz berdi");
+    }
   };
 
   const handleAddTeacher = async () => {
@@ -119,33 +154,39 @@ const Oqituvchilar = () => {
       fd.append("full_name", newTeacher.name);
       fd.append("phone", newTeacher.phone || "+998990000000");
       fd.append("email", newTeacher.email || `${newTeacher.name.replace(/\s+/g, "").toLowerCase() || "teacher"}@gmail.com`);
-      fd.append("password", newTeacher.password || "Teacher123!");
+      if (!editItem || newTeacher.password) {
+        fd.append("password", newTeacher.password || "Teacher123!");
+      }
       fd.append("address", newTeacher.address || "Toshkent");
       
-      await api.createTeacher(fd);
+      if (editItem) {
+        await api.updateTeacher(editItem, fd);
+      } else {
+        await api.createTeacher(fd);
+      }
       loadTeachers();
       setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" });
+      setEditItem(null);
       setShowPanel(false);
     } catch (err) {
       console.error(err);
-      // Fallback local adding
-      const teacher = {
-        id: Date.now(),
-        name: newTeacher.name,
-        avatar: `https://i.pravatar.cc/32?img=${Math.floor(Math.random() * 50)}`,
-        guruh: ["Yangi"],
-        phone: newTeacher.phone || "+998(00)0000000",
-        tug: "01 Jan 2024",
-        yaratilgan: "01 Jan 2024",
-        coin: 0,
-      };
-      const updated = [teacher, ...teachers];
-      setTeachers(updated);
-      localStorage.setItem("lms_teachers", JSON.stringify(updated));
-      setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" });
-      setShowPanel(false);
+      alert(err.message || "O'qituvchini saqlashda xatolik yuz berdi");
     }
   };
+
+  const handleEditClick = (teacher) => {
+    setEditItem(teacher.id);
+    setNewTeacher({
+      name: teacher.name || "",
+      phone: teacher.phone || "",
+      email: teacher.email || "",
+      password: "",
+      address: teacher.address || "",
+    });
+    setShowPanel(true);
+  };
+
+  const visibleTeachers = showArchive ? archiveTeachers : teachers;
 
   return (
     <div className="p-6 relative overflow-hidden h-full">
@@ -158,7 +199,7 @@ const Oqituvchilar = () => {
             Export
           </button>
           <button 
-            onClick={() => setShowPanel(true)}
+            onClick={() => { setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" }); setShowPanel(true); }}
             className="flex items-center gap-1.5 bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-[13px] font-semibold px-4 py-2 rounded-lg transition-colors"
           >
             <Add sx={{ fontSize: 17 }} />
@@ -181,7 +222,12 @@ const Oqituvchilar = () => {
             <Search sx={{ fontSize: 17, color: "#9ca3af" }} />
             <input type="text" placeholder="Search" className="bg-transparent text-[13px] outline-none text-gray-600 w-full" />
           </div>
-          <button className="flex items-center gap-1.5 border border-gray-300 text-gray-600 text-[13px] font-medium px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+          <button
+            onClick={() => setShowArchive((prev) => !prev)}
+            className={`flex items-center gap-1.5 border text-[13px] font-medium px-3 py-2 rounded-lg transition-colors ${
+              showArchive ? "bg-gray-800 text-white border-gray-800" : "border-gray-300 text-gray-600 hover:bg-gray-50"
+            }`}
+          >
             <Archive sx={{ fontSize: 16 }} />
             Arxiv
           </button>
@@ -229,15 +275,17 @@ const Oqituvchilar = () => {
               </tr>
             </thead>
             <tbody>
-              {teachers.map((t) => (
+              {visibleTeachers.map((t) => (
                 <tr key={t.id} className={`border-b border-gray-50 hover:bg-gray-50 transition-colors ${selected.includes(t.id) ? "bg-purple-50/50" : ""}`}>
                   <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(t.id)}
-                      onChange={() => toggleSelect(t.id)}
-                      className="w-4 h-4 accent-[#7c3aed] rounded"
-                    />
+                    {!showArchive && (
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(t.id)}
+                        onChange={() => toggleSelect(t.id)}
+                        className="w-4 h-4 accent-[#7c3aed] rounded"
+                      />
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -262,14 +310,16 @@ const Oqituvchilar = () => {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5 justify-end">
-                      <button className="text-gray-400 hover:text-red-400"><Remove sx={{ fontSize: 16 }} /></button>
-                      <button className="text-gray-400 hover:text-green-500"><Add sx={{ fontSize: 16 }} /></button>
-                      <button className="text-gray-400 hover:text-[#7c3aed]"><Visibility sx={{ fontSize: 16 }} /></button>
-                      <button className="text-gray-400 hover:text-blue-500"><CloudDownload sx={{ fontSize: 16 }} /></button>
-                      <button onClick={() => handleDelete(t.id)} className="text-gray-400 hover:text-red-500"><Delete sx={{ fontSize: 16 }} /></button>
-                      <button className="text-gray-400 hover:text-[#7c3aed]"><Edit sx={{ fontSize: 16 }} /></button>
-                    </div>
+                    {!showArchive && (
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <button className="text-gray-400 hover:text-red-400"><Remove sx={{ fontSize: 16 }} /></button>
+                        <button className="text-gray-400 hover:text-green-500"><Add sx={{ fontSize: 16 }} /></button>
+                        <button className="text-gray-400 hover:text-[#7c3aed]"><Visibility sx={{ fontSize: 16 }} /></button>
+                        <button className="text-gray-400 hover:text-blue-500"><CloudDownload sx={{ fontSize: 16 }} /></button>
+                        <button onClick={() => handleDeleteClick(t.id)} className="text-gray-400 hover:text-red-500"><Delete sx={{ fontSize: 16 }} /></button>
+                        <button onClick={() => handleEditClick(t)} className="text-gray-400 hover:text-[#7c3aed]"><Edit sx={{ fontSize: 16 }} /></button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -300,13 +350,13 @@ const Oqituvchilar = () => {
 
       {/* ===== ADD TEACHER PANEL ===== */}
       {showPanel && (
-        <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => setShowPanel(false)} />
+        <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => { setShowPanel(false); setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" }); }} />
       )}
       <div className={`fixed top-0 right-0 h-full w-[400px] bg-white shadow-2xl z-[70] transition-transform duration-300 transform ${showPanel ? "translate-x-0" : "translate-x-full"}`}>
         <div className="p-6 h-full flex flex-col">
           <div className="flex items-center justify-between mb-8">
-            <h2 className="text-xl font-bold text-gray-800">O'qituvchi qoshish</h2>
-            <button onClick={() => setShowPanel(false)} className="text-gray-400 hover:text-gray-600">
+            <h2 className="text-xl font-bold text-gray-800">{editItem ? "O'qituvchini o'zgartirish" : "O'qituvchi qoshish"}</h2>
+            <button onClick={() => { setShowPanel(false); setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" }); }} className="text-gray-400 hover:text-gray-600">
               <Close />
             </button>
           </div>
@@ -365,11 +415,11 @@ const Oqituvchilar = () => {
           </div>
 
           <div className="pt-6 border-t border-gray-100 flex gap-3">
-            <button onClick={() => setShowPanel(false)} className="flex-1 py-2 border border-gray-300 rounded-lg text-[14px] font-semibold text-gray-600 hover:bg-gray-50">
+            <button onClick={() => { setShowPanel(false); setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" }); }} className="flex-1 py-2 border border-gray-300 rounded-lg text-[14px] font-semibold text-gray-600 hover:bg-gray-50">
               Bekor qilish
             </button>
             <button onClick={handleAddTeacher} className="flex-1 py-2 bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-lg text-[14px] font-semibold">
-              Saqlash
+              {editItem ? "Yangilash" : "Saqlash"}
             </button>
           </div>
         </div>

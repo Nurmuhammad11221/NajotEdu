@@ -49,7 +49,10 @@ const sampleStudents = [
 
 const Talabalar = () => {
   const [students, setStudents] = useState([]);
+  const [teachers, setTeachers] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [showPanel, setShowPanel] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
   const [form, setForm] = useState({
     phone: "+998",
     mail: "",
@@ -57,8 +60,10 @@ const Talabalar = () => {
     tug: "",
     manzil: "",
     parol: "",
+    groups: [],
     file: null
   });
+  const [showGroupSelector, setShowGroupSelector] = useState(false);
 
   const loadStudents = async () => {
     try {
@@ -78,11 +83,11 @@ const Talabalar = () => {
         setStudents(formatted);
         localStorage.setItem("lms_students", JSON.stringify(formatted));
       } else {
-        useFallbackStudents();
+        setStudents([]);
       }
     } catch (err) {
-      console.warn("Backend API error, using localStorage fallback:", err);
-      useFallbackStudents();
+      console.warn("Backend API error:", err);
+      setStudents([]);
     }
   };
 
@@ -104,49 +109,92 @@ const Talabalar = () => {
     loadStudents();
   }, []);
 
+  useEffect(() => {
+    const loadExtras = async () => {
+      try {
+        const t = await api.getTeachers();
+        setTeachers(Array.isArray(t) ? t : t.data || []);
+      } catch (e) {
+        setTeachers([]);
+      }
+      try {
+        const g = await api.getGroups();
+        setGroups(Array.isArray(g) ? g : g.data || []);
+      } catch (e) {
+        setGroups([]);
+      }
+    };
+    loadExtras();
+  }, []);
+
   const handleAdd = async () => {
     if (!form.fio) return;
     try {
-      const fd = new FormData();
-      fd.append("full_name", form.fio);
-      fd.append("email", form.mail || `${form.fio.replace(/\s+/g, "").toLowerCase()}@gmail.com`);
-      fd.append("password", form.parol || "Student123!");
-      fd.append("phone", form.phone || "+998990000000");
-      fd.append("address", form.manzil || "Toshkent");
-      fd.append("birth_date", form.tug || "2000-01-01");
-      fd.append("groups", JSON.stringify([1]));
-      
+      // prepare groups payload: prefer numeric IDs when available, otherwise keep string name
+      const groupsPayload = (form.groups || []).map(g => {
+        if (!g) return null;
+        if (typeof g === 'object') {
+          const id = g.id ?? g._id;
+          if (id !== undefined && id !== null && id !== "") {
+            const asNum = Number(id);
+            return Number.isNaN(asNum) ? String(id) : asNum;
+          }
+          return g.name || null;
+        }
+        const asNum = Number(g);
+        return Number.isNaN(asNum) ? String(g) : asNum;
+      }).filter(x => x !== null && x !== undefined);
+
       if (form.file) {
+        const fd = new FormData();
+        fd.append("full_name", form.fio);
+        fd.append("email", form.mail || `${form.fio.replace(/\s+/g, "").toLowerCase()}@gmail.com`);
+        fd.append("password", form.parol || "Student123!");
+        fd.append("phone", form.phone || "+998990000000");
+        fd.append("address", form.manzil || "Toshkent");
+        fd.append("birth_date", form.tug || "2000-01-01");
+        fd.append("groups", JSON.stringify(groupsPayload));
         fd.append("photo", form.file);
+
+        // log
+        try { console.log('Submitting student as FormData'); } catch (e) {}
+        await api.createStudent(fd);
+      } else {
+        const payload = {
+          full_name: form.fio,
+          email: form.mail || `${form.fio.replace(/\s+/g, "").toLowerCase()}@gmail.com`,
+          password: form.parol || "Student123!",
+          phone: form.phone || "+998990000000",
+          address: form.manzil || "Toshkent",
+          birth_date: form.tug || "2000-01-01",
+          groups: groupsPayload,
+        };
+        try { console.log('Submitting student as JSON', payload); } catch (e) {}
+        await api.createStudent(payload);
       }
-      
-      await api.createStudent(fd);
       loadStudents();
       setShowPanel(false);
       setForm({ phone: "+998", mail: "", fio: "", tug: "", manzil: "", parol: "", file: null });
     } catch (err) {
       console.error(err);
-      // Fallback local adding
-      const newStudent = {
-        id: Date.now(),
-        name: form.fio,
-        guruh: ["n105"],
-        phone: form.phone,
-        email: form.mail,
-        tug: form.tug || "01.01.2000",
-        manzil: form.manzil || "Noma'lum",
-        avatarColor: "bg-gray-100 text-gray-600"
-      };
-      const updated = [...students, newStudent];
-      setStudents(updated);
-      localStorage.setItem("lms_students", JSON.stringify(updated));
-      setShowPanel(false);
-      setForm({ phone: "+998", mail: "", fio: "", tug: "", manzil: "", parol: "", file: null });
+      alert(err.message || "Talaba qo'shishda xatolik yuz berdi");
     }
   };
 
+  const toggleGroup = (group) => {
+    const gid = group?.id ?? group?._id ?? group?.name ?? group;
+    setForm(prev => {
+      const existing = Array.isArray(prev.groups) ? prev.groups : [];
+      const found = existing.find(g => (g?.id ?? g) === gid || g === gid || g?.name === gid);
+      if (found) {
+        return { ...prev, groups: existing.filter(g => !((g?.id ?? g) === gid || g === gid || g?.name === gid)) };
+      }
+      return { ...prev, groups: [...existing, group] };
+    });
+  };
+
   return (
-    <div className="p-6 h-full relative overflow-hidden">
+    <div className="p-6 flex flex-col min-h-full">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Talabalar</h1>
@@ -241,7 +289,9 @@ const Talabalar = () => {
       {showPanel && (
         <div className="fixed inset-0 bg-black/40 z-[100]" onClick={() => setShowPanel(false)} />
       )}
-      <div className={`fixed top-0 right-0 h-full w-[450px] bg-white shadow-2xl z-[110] transition-transform duration-300 transform ${showPanel ? "translate-x-0" : "translate-x-full"}`}>
+      <div
+        className={`fixed top-0 right-0 h-full w-[450px] bg-white shadow-2xl z-[110] overflow-hidden transition-transform duration-300 transform ${showPanel ? "translate-x-0" : "translate-x-full"}`}
+      >
         <div className="p-6 h-full flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-xl font-bold text-gray-800">Talaba qo'shish</h2>
@@ -251,7 +301,10 @@ const Talabalar = () => {
           </div>
           <p className="text-[12px] text-gray-400 mb-8">Bu yerda siz yangi Talaba qo'shishingiz mumkin.</p>
           
-          <div className="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+          <div
+            className="space-y-4 flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar"
+            style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+          >
             <div>
               <label className="block text-[13px] font-bold text-gray-700 mb-1.5">Telefon raqam</label>
               <input 
@@ -312,9 +365,42 @@ const Talabalar = () => {
             </div>
             <div>
               <label className="block text-[13px] font-bold text-gray-700 mb-1.5">Guruh</label>
-              <button className="w-full border border-gray-200 rounded-xl py-3.5 flex items-center justify-center gap-1.5 text-[#7c3aed] text-[13.5px] font-bold hover:bg-purple-50 transition-colors">
+              <div className="flex gap-2 flex-wrap mb-2">
+                {(form.groups || []).map((g, i) => (
+                  <span key={i} className="text-[12px] bg-[#eef2ff] text-[#5b21b6] px-3 py-1 rounded-xl font-semibold">{typeof g === 'object' ? (g.name || g.nomi || g.title) : String(g)}</span>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGroupSelector(prev => !prev)}
+                className="w-full border border-gray-200 rounded-xl py-3.5 flex items-center justify-center gap-1.5 text-[#7c3aed] text-[13.5px] font-bold hover:bg-purple-50 transition-colors"
+              >
                 <Add sx={{ fontSize: 18 }} /> Guruh qo'shish
               </button>
+
+              {showGroupSelector && (
+                <div className="mt-2 max-h-40 overflow-y-auto border border-gray-100 rounded-lg p-2 bg-white">
+                  {Array.isArray(groups) && groups.length > 0 ? (
+                    groups.map((g) => {
+                      const gid = g?.id ?? g?._id ?? g?.name ?? String(g);
+                      const isSelected = (form.groups || []).some(sg => (sg?.id ?? sg) === gid || sg === gid || sg?.name === gid || sg === g?.name);
+                      return (
+                        <label key={gid} className="flex items-center gap-3 px-2 py-1 hover:bg-gray-50 rounded">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleGroup(g)}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-sm text-gray-700">{g.name || g.nomi || g.title || String(gid)}</span>
+                        </label>
+                      );
+                    })
+                  ) : (
+                    <div className="text-sm text-gray-500 px-2">Guruhlar topilmadi</div>
+                  )}
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-[13px] font-bold text-gray-700 mb-1.5">Surati</label>

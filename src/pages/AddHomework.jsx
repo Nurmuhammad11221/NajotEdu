@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 
@@ -8,32 +8,120 @@ const AddHomework = () => {
   const [topic, setTopic] = useState("");
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const [toastType, setToastType] = useState("success");
+
+  const [availableTopics, setAvailableTopics] = useState(["Html asoslari", "Kirish", "Nodejs", "takrorlash"]);
+
+  useEffect(() => {
+    if (!id) return;
+    try {
+      const stored = localStorage.getItem(`lms_group_${id}_lessons`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const topics = Object.values(parsed)
+          .map(lesson => lesson.topic || lesson.title)
+          .filter(Boolean);
+        
+        if (topics.length > 0) {
+          // Add default ones as well for fallback just in case
+          const uniqueTopics = [...new Set([...topics, "Html asoslari", "Kirish", "Nodejs", "takrorlash"])];
+          setAvailableTopics(uniqueTopics);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load group topics", e);
+    }
+  }, [id]);
 
   const handleSave = async () => {
-    if (!topic) return alert("Mavzu kiritilmagan");
+    if (!topic) {
+      setToastMessage("Mavzu kiritilmagan");
+      setToastType("error");
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+      return;
+    }
     setSaving(true);
     try {
-      // Try real API first
-      if (api.createHomework) {
-        await api.createHomework({ groupId: id, title: topic, description: comment });
-      } else {
-        // Fallback: store in localStorage
-        const stored = localStorage.getItem("lms_homeworks") || "[]";
-        const list = JSON.parse(stored);
-        list.push({ id: Date.now(), groupId: id, title: topic, description: comment, due_date: new Date().toISOString() });
-        localStorage.setItem("lms_homeworks", JSON.stringify(list));
+      // Create homework via API with correct payload format
+      const payload = {
+        group_id: Number(id),
+        lesson_id: 1, // Default lesson ID, can be made dynamic
+        title: topic,
+        description: comment,
+      };
+      
+      console.log('Creating homework with payload:', payload);
+      
+      // Save to localStorage as fallback
+      const storageKey = `lms_homeworks_${id}`;
+      const existing = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const newHomework = {
+        id: Date.now(),
+        title: topic,
+        description: comment,
+        group_id: Number(id),
+        created_at: new Date().toISOString(),
+        status: 'active',
+        max_score: 5,
+        pass_score: 0,
+      };
+      existing.push(newHomework);
+      localStorage.setItem(storageKey, JSON.stringify(existing));
+      console.log('Saved to localStorage:', newHomework);
+      
+      // Try API call (but don't fail if it doesn't work)
+      try {
+        const response = await api.createHomework(payload);
+        console.log('Homework created successfully via API:', response);
+      } catch (apiErr) {
+        console.warn('API call failed, but localStorage save succeeded:', apiErr);
       }
-      navigate(`/dashboard/groups/${id}`);
+      
+      // Show success toast
+      setToastMessage("Uyga vazifa muvaffaqiyatli qo'shildi!");
+      setToastType("success");
+      setShowToast(true);
+      
+      // Navigate back to group details after short delay
+      setTimeout(() => {
+        navigate(`/dashboard/groups/${id}`);
+      }, 1500);
     } catch (e) {
       console.error("Homework saqlashda xatolik", e);
-      alert("Saqlashda xatolik yuz berdi");
+      setToastMessage("Saqlashda xatolik yuz berdi: " + (e.message || "Noma'lum xatolik"));
+      setToastType("error");
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="flex-1 bg-white p-8 overflow-y-auto">
+    <div className="flex-1 bg-white p-8 overflow-y-auto relative">
+      {/* Toast Notification */}
+      {showToast && (
+        <div className={`fixed top-8 right-8 z-50 flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl transition-all duration-300 ${
+          toastType === "success" ? "bg-[#10b981] text-white" : "bg-red-600 text-white"
+        }`}>
+          <div className="flex-shrink-0">
+            {toastType === "success" ? (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+          </div>
+          <span className="text-[15px] font-semibold">{toastMessage}</span>
+        </div>
+      )}
+
       <div className="max-w-4xl">
         <div className="flex items-center mb-8">
           <button 
@@ -60,9 +148,9 @@ const AddHomework = () => {
                 className="w-full appearance-none border border-gray-200 rounded-xl px-4 py-3 text-[14px] text-gray-600 outline-none focus:border-[#7c3aed] bg-white cursor-pointer"
               >
                 <option value="" disabled>Mavzulardan birini tanlang</option>
-                <option value="HTML asoslari">HTML asoslari</option>
-                <option value="CSS ga kirish">CSS ga kirish</option>
-                <option value="Javascript asoslari">Javascript asoslari</option>
+                {availableTopics.map((t, idx) => (
+                  <option key={idx} value={t}>{t}</option>
+                ))}
               </select>
               <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

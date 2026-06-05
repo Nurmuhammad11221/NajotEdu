@@ -27,7 +27,6 @@ const subTabs = [
   "Niner markazi",
   "IELTS full mock",
   "IELTS full mock centre",
-  "Arxiv",
 ];
 
 import { api } from "../utils/api";
@@ -40,26 +39,44 @@ const Xonalar = () => {
   const [showPanel, setShowPanel] = useState(false);
   const [form, setForm] = useState({ name: "", capacity: "" });
   const [deleteItem, setDeleteItem] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+  const [archiveRooms, setArchiveRooms] = useState([]);
+
+  const formatRoom = (r, idx) => ({
+    id: r.id || idx + 1,
+    name: r.name || "Xona",
+    capacity: r.capacity || 20,
+    center: r.center || "AiCoder markazi",
+  });
 
   const loadRooms = async () => {
     try {
       const data = await api.getRooms();
       const list = Array.isArray(data) ? data : data.data || [];
-      const formatted = list.map((r, idx) => ({
-        id: r.id || idx + 1,
-        name: r.name || "Xona",
-        capacity: r.capacity || 20,
-        center: r.center || "AiCoder markazi",
-      }));
+      const formatted = list.map(formatRoom);
       if (formatted.length > 0) {
         setRooms(formatted);
         localStorage.setItem("lms_rooms", JSON.stringify(formatted));
       } else {
-        useFallbackRooms();
+        setRooms([]);
       }
     } catch (err) {
-      console.warn("Backend API error, using localStorage fallback:", err);
-      useFallbackRooms();
+      console.warn("Backend API error:", err);
+      setRooms([]);
+    }
+  };
+
+  const loadArchiveRooms = async () => {
+    try {
+      const data = await api.getArchiveRooms();
+      const list = Array.isArray(data) ? data : data.data || [];
+      const formatted = list.map(formatRoom);
+      setArchiveRooms(formatted);
+      localStorage.setItem("lms_rooms_archive", JSON.stringify(formatted));
+    } catch (err) {
+      console.warn("Archive API error:", err);
+      const stored = localStorage.getItem("lms_rooms_archive");
+      setArchiveRooms(stored ? JSON.parse(stored) : []);
     }
   };
 
@@ -79,6 +96,7 @@ const Xonalar = () => {
 
   useEffect(() => {
     loadRooms();
+    loadArchiveRooms();
   }, []);
 
   const handleSave = async () => {
@@ -88,25 +106,25 @@ const Xonalar = () => {
         name: form.name,
         capacity: Number(form.capacity)
       };
-      await api.createRoom(payload);
+      if (editItem) {
+        await api.updateRoom(editItem, payload);
+      } else {
+        await api.createRoom(payload);
+      }
       loadRooms();
       setShowPanel(false);
+      setEditItem(null);
       setForm({ name: "", capacity: "" });
     } catch (err) {
       console.error(err);
-      // Fallback local adding
-      const newRoom = {
-        id: Date.now(),
-        name: form.name,
-        capacity: parseInt(form.capacity),
-        center: activeCenter,
-      };
-      const updated = [...rooms, newRoom];
-      setRooms(updated);
-      localStorage.setItem("lms_rooms", JSON.stringify(updated));
-      setShowPanel(false);
-      setForm({ name: "", capacity: "" });
+      alert(err.message || "Xonani saqlashda xatolik yuz berdi");
     }
+  };
+
+  const handleEditClick = (room) => {
+    setEditItem(room.id);
+    setForm({ name: room.name || "", capacity: room.capacity || "" });
+    setShowPanel(true);
   };
 
   const handleDeleteClick = (id) => {
@@ -120,14 +138,16 @@ const Xonalar = () => {
         await api.deleteRoom(deleteItem);
       }
       const updated = rooms.filter((r) => r.id !== deleteItem);
+      const deletedRoom = rooms.find((r) => r.id === deleteItem);
+      const archived = deletedRoom ? [deletedRoom, ...archiveRooms] : archiveRooms;
       setRooms(updated);
+      setArchiveRooms(archived);
       localStorage.setItem("lms_rooms", JSON.stringify(updated));
+      localStorage.setItem("lms_rooms_archive", JSON.stringify(archived));
+      loadArchiveRooms();
     } catch (e) {
       console.error("Xonani o'chirishda xatolik:", e);
-      // Fallback local delete
-      const updated = rooms.filter((r) => r.id !== deleteItem);
-      setRooms(updated);
-      localStorage.setItem("lms_rooms", JSON.stringify(updated));
+      alert(e.message || "Xonani o'chirishda xatolik yuz berdi");
     } finally {
       setDeleteItem(null);
     }
@@ -135,7 +155,10 @@ const Xonalar = () => {
 
   const handleRefresh = () => {
     loadRooms();
+    loadArchiveRooms();
   };
+
+  const visibleRooms = activeCenter === "Arxiv" ? archiveRooms : rooms.filter((r) => !r.center || r.center === activeCenter);
 
   return (
     <div className="p-6 h-full relative overflow-hidden flex flex-col">
@@ -175,13 +198,25 @@ const Xonalar = () => {
               <Refresh sx={{ fontSize: 18 }} />
             </button>
           </div>
-          <button
-            onClick={() => setShowPanel(true)}
-            className="bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-[12px] font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition-all"
-          >
-            <Add sx={{ fontSize: 16 }} />
-            Xonani qo'shish
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveCenter("Arxiv")}
+              className={`text-[12px] font-bold px-4 py-2 rounded-lg border transition-colors ${
+                activeCenter === "Arxiv"
+                  ? "bg-gray-800 text-white border-gray-800"
+                  : "text-gray-600 border-gray-300 hover:bg-gray-50"
+              }`}
+            >
+              Arxiv
+            </button>
+            <button
+              onClick={() => { setEditItem(null); setForm({ name: "", capacity: "" }); setShowPanel(true); }}
+              className="bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-[12px] font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 shadow-sm transition-all"
+            >
+              <Add sx={{ fontSize: 16 }} />
+              Xonani qo'shish
+            </button>
+          </div>
         </div>
 
         {/* Sub tabs (Centers) */}
@@ -203,10 +238,13 @@ const Xonalar = () => {
 
         {/* Grid of rooms */}
         <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-          <div className="grid grid-cols-4 gap-4">
-            {rooms
-              .filter((r) => !r.center || r.center === activeCenter)
-              .map((room) => (
+          {visibleRooms.length === 0 ? (
+            <div className="py-16 text-center text-gray-400 text-[14px]">
+              {activeCenter === "Arxiv" ? "Arxivda xonalar mavjud emas." : "Bu markazda xonalar mavjud emas."}
+            </div>
+          ) : (
+            <div className="grid grid-cols-4 gap-4">
+              {visibleRooms.map((room) => (
                   <div
                     key={room.id}
                     className="group bg-gray-50/50 hover:bg-white border border-gray-100 hover:border-purple-100 rounded-xl p-5 flex items-center justify-between transition-all hover:shadow-sm"
@@ -215,22 +253,25 @@ const Xonalar = () => {
                     <h3 className="font-bold text-gray-800 text-[14px]">{room.name}</h3>
                     <p className="text-[12px] text-gray-400 mt-1 font-semibold">Sig'imi: {room.capacity}</p>
                   </div>
-                  <div className="flex justify-end gap-3 transition-opacity">
-                    <button onClick={() => handleDeleteClick(room.id)} className="text-red-400 hover:text-red-600">
-                      <Delete sx={{ fontSize: 18 }} />
-                    </button>
-                    <button className="text-blue-500 hover:text-blue-700">
-                      <Edit sx={{ fontSize: 18 }} />
-                    </button>
-                  </div>
+                  {activeCenter !== "Arxiv" && (
+                    <div className="flex justify-end gap-3 transition-opacity">
+                      <button onClick={() => handleDeleteClick(room.id)} className="text-red-400 hover:text-red-600">
+                        <Delete sx={{ fontSize: 18 }} />
+                      </button>
+                      <button onClick={() => handleEditClick(room)} className="text-blue-500 hover:text-blue-700">
+                        <Edit sx={{ fontSize: 18 }} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
       {showPanel && (
-        <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => setShowPanel(false)} />
+        <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => { setShowPanel(false); setEditItem(null); setForm({ name: "", capacity: "" }); }} />
       )}
       <div
         className={`fixed top-0 right-0 h-full w-[450px] bg-white shadow-2xl z-[70] transition-transform duration-300 transform ${
@@ -238,8 +279,8 @@ const Xonalar = () => {
         } flex flex-col`}
       >
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
-          <h2 className="text-xl font-bold text-gray-800">Xonani qo'shish</h2>
-          <button onClick={() => setShowPanel(false)} className="text-gray-400 hover:text-gray-600">
+          <h2 className="text-xl font-bold text-gray-800">{editItem ? "Xonani o'zgartirish" : "Xonani qo'shish"}</h2>
+          <button onClick={() => { setShowPanel(false); setEditItem(null); setForm({ name: "", capacity: "" }); }} className="text-gray-400 hover:text-gray-600">
             <Close />
           </button>
         </div>
@@ -274,7 +315,7 @@ const Xonalar = () => {
 
         <div className="p-6 border-t border-gray-100 flex gap-3">
           <button
-            onClick={() => setShowPanel(false)}
+            onClick={() => { setShowPanel(false); setEditItem(null); setForm({ name: "", capacity: "" }); }}
             className="flex-1 py-2.5 border border-gray-300 rounded-lg text-[14px] font-semibold text-gray-600 hover:bg-gray-50"
           >
             Bekor qilish
@@ -283,7 +324,7 @@ const Xonalar = () => {
             onClick={handleSave}
             className="flex-1 py-2.5 bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-lg text-[14px] font-semibold"
           >
-            Saqlash
+            {editItem ? "Yangilash" : "Saqlash"}
           </button>
         </div>
       </div>

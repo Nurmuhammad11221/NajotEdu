@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Add, Close, MoreVert, Search, Class } from "@mui/icons-material";
+import { Add, Close, MoreVert, Search, Class, Archive } from "@mui/icons-material";
 import PeopleIcon from "@mui/icons-material/People";
 import SchoolIcon from "@mui/icons-material/School";
 import { api } from "../utils/api";
@@ -49,6 +49,52 @@ const darsKunlariList = [
   "Yakshanba",
 ];
 
+const weekdayLabelMap = {
+  MONDAY: "Dushanba",
+  TUESDAY: "Seshanba",
+  WEDNESDAY: "Chorshanba",
+  THURSDAY: "Payshanba",
+  FRIDAY: "Juma",
+  SATURDAY: "Shanba",
+  SUNDAY: "Yakshanba",
+  Du: "Dushanba",
+  Se: "Seshanba",
+  Ch: "Chorshanba",
+  Pa: "Payshanba",
+  Ju: "Juma",
+  Sha: "Shanba",
+  Ya: "Yakshanba",
+  Dushanba: "Dushanba",
+  Seshanba: "Seshanba",
+  Chorshanba: "Chorshanba",
+  Payshanba: "Payshanba",
+  Juma: "Juma",
+  Shanba: "Shanba",
+  Yakshanba: "Yakshanba",
+};
+
+const formatDateLabel = (value) => {
+  if (!value) return "-";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = date.toLocaleString("uz-UZ", { month: "short" });
+  return `${day} ${month}`;
+};
+
+const formatWeekdayList = (list) => {
+  if (!Array.isArray(list)) return "";
+  return list
+    .map((item) => {
+      if (!item) return "";
+      const key = String(item).trim();
+      const normalizedKey = key.charAt(0).toUpperCase() + key.slice(1).toLowerCase();
+      return weekdayLabelMap[key] || weekdayLabelMap[key.toUpperCase()] || weekdayLabelMap[normalizedKey] || key.substring(0, 3);
+    })
+    .filter(Boolean)
+    .join(", ");
+};
+
 const defaultRooms = [
   { id: 1, name: "genious room", capacity: 15, center: "AiCoder markazi" },
   { id: 2, name: "Impact room", capacity: 12, center: "AiCoder markazi" },
@@ -65,17 +111,13 @@ const Guruhlar = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("Guruhlar");
   const [groups, setGroups] = useState([]);
-  const [showPanel, setShowPanel] = useState(false);
-  const [showTalabaModal, setShowTalabaModal] = useState(false);
-  const [rooms, setRooms] = useState([]);
-  const [courses, setCourses] = useState([]);
-  const [teachers, setTeachers] = useState([]);
-  const [students, setStudents] = useState([]);
+  const [archiveGroups, setArchiveGroups] = useState([]);
 
-  const loadGroups = async () => {
+  const loadArchiveGroups = async () => {
     try {
-      const data = await api.getGroups();
-      const list = Array.isArray(data) ? data : data.data || [];
+      // If backend provides an endpoint, use it. Otherwise fallback to localStorage.
+      const data = await (api.getArchiveGroups ? api.getArchiveGroups() : Promise.resolve(null));
+      const list = Array.isArray(data) ? data : data?.data || [];
       const formatted = list.map((g, idx) => ({
         id: g.id || idx + 1,
         status: true,
@@ -83,20 +125,64 @@ const Guruhlar = () => {
         kurs: g.course?.name || g.course?.title || "Dasturlash",
         davomiyligi: "6 oy",
         vaqt: g.start_time || "09:00",
-        kunlar: Array.isArray(g.week_day) ? g.week_day.map(w => w.substring(0, 3)).join(", ") : "Dushanba",
+        sana: formatDateLabel(g.start_date || g.startDate || ""),
+        kunlar: formatWeekdayList(g.week_day) || "Dushanba",
         xona: g.room?.name || "Xona",
         oqituvchi: Array.isArray(g.teachers) && g.teachers[0] ? g.teachers[0].full_name || g.teachers[0].name : "Mohirbek",
         talabalar: Array.isArray(g.students) ? g.students.length : 0,
       }));
+      setArchiveGroups(formatted);
+      localStorage.setItem("lms_groups_archive", JSON.stringify(formatted));
+    } catch (err) {
+      console.warn("Archive Groups API error:", err);
+      const stored = localStorage.getItem("lms_groups_archive");
+      if (stored) setArchiveGroups(JSON.parse(stored));
+    }
+  };
+  const [showTalabaModal, setShowTalabaModal] = useState(false);
+  const [rooms, setRooms] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [teachers, setTeachers] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [showPanel, setShowPanel] = useState(false);
+  // Visible groups based on selected tab
+  const visibleGroups = activeTab === "Arxiv" ? archiveGroups : groups;
+
+  const loadGroups = async () => {
+    try {
+      const data = await api.getGroups();
+      const list = Array.isArray(data) ? data : data.data || [];
+      
+      const storedArchiveStr = localStorage.getItem("lms_groups_archive");
+      const storedArchive = storedArchiveStr ? JSON.parse(storedArchiveStr) : [];
+      const archivedIds = new Set(storedArchive.map(g => g.id));
+
+      const formatted = list.map((g, idx) => {
+        const rawStartDate = g.start_date || g.startDate || g.created_at || g.createdAt || "";
+        return {
+          id: g.id || idx + 1,
+          status: true,
+          nomi: g.name || "Guruh",
+          kurs: g.course?.name || g.course?.title || "Dasturlash",
+          davomiyligi: "6 oy",
+          vaqt: g.start_time || "09:00",
+          sana: formatDateLabel(rawStartDate),
+          kunlar: formatWeekdayList(g.week_day) || "Dushanba",
+          xona: g.room?.name || "Xona",
+          oqituvchi: Array.isArray(g.teachers) && g.teachers[0] ? g.teachers[0].full_name || g.teachers[0].name : "Mohirbek",
+          talabalar: Array.isArray(g.students) ? g.students.length : 0,
+        };
+      }).filter(g => !archivedIds.has(g.id));
+
       if (formatted.length > 0) {
         setGroups(formatted);
         localStorage.setItem("lms_groups", JSON.stringify(formatted));
       } else {
-        useFallbackGroups();
+        setGroups([]);
       }
     } catch (err) {
-      console.warn("Backend API error, using localStorage fallback:", err);
-      useFallbackGroups();
+      console.warn("Backend API error:", err);
+      setGroups([]);
     }
   };
 
@@ -137,10 +223,10 @@ const Guruhlar = () => {
         setRooms(list);
         localStorage.setItem("lms_rooms", JSON.stringify(list));
       } else {
-        useFallbackRooms();
+        setRooms([]);
       }
     } catch (err) {
-      useFallbackRooms();
+      setRooms([]);
     }
 
     // Courses
@@ -151,12 +237,7 @@ const Guruhlar = () => {
         setCourses(list.map(c => ({ id: c.id, title: c.name || c.title })));
       }
     } catch (err) {
-      // Use local courses
-      const stored = localStorage.getItem("lms_courses");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setCourses(parsed.map(c => ({ id: c.id, title: c.title || c.name })));
-      }
+      setCourses([]);
     }
 
     // Teachers
@@ -167,11 +248,7 @@ const Guruhlar = () => {
         setTeachers(list.map(t => ({ id: t.id, name: t.full_name || t.name })));
       }
     } catch (err) {
-      const stored = localStorage.getItem("lms_teachers");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setTeachers(parsed.map(t => ({ id: t.id, name: t.name })));
-      }
+      setTeachers([]);
     }
 
     // Students
@@ -182,16 +259,13 @@ const Guruhlar = () => {
         setStudents(list.map(s => ({ id: s.id, name: s.full_name || s.name })));
       }
     } catch (err) {
-      const stored = localStorage.getItem("lms_students");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setStudents(parsed.map(s => ({ id: s.id, name: s.name })));
-      }
+      setStudents([]);
     }
   };
 
   useEffect(() => {
     loadGroups();
+    loadArchiveGroups();
     loadAllFormData();
   }, [showPanel]); // Re-load when the create group panel opens/closes so newly created records in other pages are updated!
 
@@ -227,14 +301,44 @@ const Guruhlar = () => {
     }));
   };
 
-  const toggleStatus = (id) => {
-    const updated = groups.map(g => g.id === id ? { ...g, status: !g.status } : g);
-    setGroups(updated);
-    localStorage.setItem("lms_groups", JSON.stringify(updated));
+  const toggleArchive = (id) => {
+    if (activeTab === "Arxiv") {
+      // Restore from archive
+      const restored = archiveGroups.find((g) => g.id === id);
+      if (!restored) return;
+      const newArchive = archiveGroups.filter((g) => g.id !== id);
+      const newGroups = [...groups, restored];
+      setArchiveGroups(newArchive);
+      setGroups(newGroups);
+      localStorage.setItem("lms_groups_archive", JSON.stringify(newArchive));
+      localStorage.setItem("lms_groups", JSON.stringify(newGroups));
+    } else {
+      // Archive active group
+      const toArchive = groups.find((g) => g.id === id);
+      if (!toArchive) return;
+      const newGroups = groups.filter((g) => g.id !== id);
+      const newArchive = [...archiveGroups, toArchive];
+      setGroups(newGroups);
+      setArchiveGroups(newArchive);
+      localStorage.setItem("lms_groups", JSON.stringify(newGroups));
+      localStorage.setItem("lms_groups_archive", JSON.stringify(newArchive));
+    }
   };
+const toggleStatus = (id) => {
+  const updated = groups.map(g => g.id === id ? { ...g, status: !g.status } : g);
+  setGroups(updated);
+  localStorage.setItem("lms_groups", JSON.stringify(updated));
+};
 
   const handleSaveGroup = async () => {
-    if (!form.nomi) return;
+    if (!form.nomi.trim()) {
+      alert("Guruh nomini kiriting");
+      return;
+    }
+    if (!form.kurs || !form.oqituvchi || !form.xona || !form.sana || !form.vaqt || !form.kunlar.length) {
+      alert("Iltimos barcha majburiy maydonlarni to'ldiring: kurs, xona, dars vaqti, boshlanish sanasi va dars kunlari.");
+      return;
+    }
     try {
       const weekdayMap = {
         "Dushanba": "MONDAY",
@@ -245,49 +349,41 @@ const Guruhlar = () => {
         "Shanba": "SATURDAY",
         "Yakshanba": "SUNDAY"
       };
-      
+
       const payload = {
         name: form.nomi,
         description: form.tavsif || "Guruh tavsifi",
-        course_id: Number(form.kurs) || 1,
-        teachers: form.oqituvchi ? [Number(form.oqituvchi)] : [1],
+        course_id: Number(form.kurs),
+        teachers: [Number(form.oqituvchi)],
         students: form.talabalarIds.map(Number),
-        room_id: Number(form.xona) || 1,
-        start_date: form.sana || new Date().toISOString().split("T")[0],
+        room_id: Number(form.xona),
+        start_date: form.sana,
         week_day: form.kunlar.map(k => weekdayMap[k] || "MONDAY"),
-        start_time: form.vaqt || "09:00",
+        start_time: form.vaqt,
         max_student: 20
       };
-      
+
+      console.log('Creating group with payload:', payload);
       await api.createGroup(payload);
       loadGroups();
       setShowPanel(false);
       setForm({ nomi: "", kurs: "", xona: "", kunlar: [], vaqt: "09:00", sana: "", tavsif: "", oqituvchi: "", talabalarIds: [] });
     } catch (err) {
-      console.error(err);
-      // Fallback local adding
-      const newGroup = {
-        id: Date.now(),
-        status: true,
-        nomi: form.nomi,
-        kurs: form.kurs || "Noma'lum",
-        davomiyligi: "6 oy", // default
-        vaqt: form.vaqt,
-        kunlar: form.kunlar.map(k => k.substring(0, 2)).join(", ") || "Belgilanmagan",
-        xona: form.xona || "Noma'lum",
-        oqituvchi: form.oqituvchi || "Noma'lum",
-        talabalar: form.talabalarIds.length,
-      };
-      const updated = [...groups, newGroup];
-      setGroups(updated);
-      localStorage.setItem("lms_groups", JSON.stringify(updated));
-      setShowPanel(false);
-      setForm({ nomi: "", kurs: "", xona: "", kunlar: [], vaqt: "09:00", sana: "", tavsif: "", oqituvchi: "", talabalarIds: [] });
+      console.error('Group creation error:', err);
+      const errorMessage = err.message || err.error || "Guruh qo'shishda xatolik yuz berdi";
+      
+      // Check if it's a room busy error
+      if (errorMessage.toLowerCase().includes('room') && errorMessage.toLowerCase().includes('busy')) {
+        const roomName = rooms.find(r => r.id === Number(form.xona))?.name || form.xona;
+        alert(`Xona "${roomName}" tanlangan vaqtda (${form.vaqt}) band. Iltimos boshqa xona yoki vaqt tanlang.`);
+      } else {
+        alert(errorMessage);
+      }
     }
   };
 
   return (
-    <div className="p-6 h-full relative overflow-hidden flex flex-col">
+    <div className="p-6 flex flex-col min-h-full">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-800">Guruhlar</h1>
@@ -325,7 +421,7 @@ const Guruhlar = () => {
             <PeopleIcon sx={{ fontSize: 20 }} />
             <span className="text-[13px] font-semibold">Jami guruhlar</span>
           </div>
-          <div className="text-3xl font-bold text-gray-800">{groups.length}</div>
+          <div className="text-3xl font-bold text-gray-800">{visibleGroups.length}</div>
           <button className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
             <MoreVert sx={{ fontSize: 20 }} />
           </button>
@@ -363,6 +459,7 @@ const Guruhlar = () => {
                 <th className="px-4 py-4 font-semibold text-center">Status</th>
                 <th className="px-4 py-4 font-semibold text-center">Guruh nomi</th>
                 <th className="px-4 py-4 font-semibold text-center">Kurs</th>
+                <th className="px-4 py-4 font-semibold text-center">Boshlanish sanasi</th>
                 <th className="px-4 py-4 font-semibold text-center">Davomiyligi</th>
                 <th className="px-4 py-4 font-semibold text-center">Dars vaqti</th>
                 <th className="px-4 py-4 font-semibold text-center">Xona</th>
@@ -372,12 +469,12 @@ const Guruhlar = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {groups.map((g) => (
-                <tr 
-                  key={g.id} 
-                  onClick={() => navigate(`/dashboard/groups/${g.id}`)}
-                  className="hover:bg-gray-50/50 transition-colors cursor-pointer"
-                >
+          {visibleGroups.map((g) => (
+            <tr
+              key={g.id}
+              onClick={() => navigate(`/dashboard/groups/${g.id}`)}
+              className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+            >
                   <td className="px-4 py-4">
                     <div className="flex items-center justify-center gap-2">
                       <button
@@ -395,6 +492,7 @@ const Guruhlar = () => {
                   <td className="px-4 py-4">
                     <span className="text-[11px] bg-pink-50 text-pink-500 font-bold px-2 py-1 rounded-full border border-pink-100">{g.kurs}</span>
                   </td>
+                  <td className="px-4 py-4 text-gray-600 font-medium">{g.sana || "-"}</td>
                   <td className="px-4 py-4 text-gray-600 font-medium">{g.davomiyligi}</td>
                   <td className="px-4 py-4">
                     <div className="font-bold text-gray-800">{g.vaqt}</div>
@@ -404,14 +502,17 @@ const Guruhlar = () => {
                   <td className="px-4 py-4 font-bold text-gray-800">{g.oqituvchi}</td>
                   <td className="px-4 py-4 font-bold text-gray-800">{g.talabalar}</td>
                   <td className="px-4 py-4">
-                    <button className="text-gray-400 hover:text-gray-600">
-                      <MoreVert sx={{ fontSize: 18 }} />
-                    </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleArchive(g.id); }}
+              className="text-gray-400 hover:text-gray-600 ml-2"
+            >
+              <Archive sx={{ fontSize: 18 }} />
+            </button>
                   </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            </tr>
+          ))}
+        </tbody>
+      </table>
         </div>
       </div>
 
@@ -430,7 +531,7 @@ const Guruhlar = () => {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-5 custom-scrollbar">
           <div>
             <label className="block text-[13px] font-bold text-gray-700 mb-1.5">Guruh nomi <span className="text-red-500">*</span></label>
             <input

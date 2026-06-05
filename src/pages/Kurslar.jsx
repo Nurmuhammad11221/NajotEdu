@@ -10,7 +10,7 @@ const tabs = [
   { label: "Xodimlar", path: "/dashboard/xodimlar" },
 ];
 
-const filialTabs = ["Filial 1", "Filial 2", "Arxiv"];
+const filialTabs = ["Filial 1", "Filial 2"];
 
 const darsVaqtlar = ["30 min", "45 min", "60 min", "90 min", "120 min"];
 const kursOylar = ["1 oy", "2 oy", "3 oy", "6 oy", "12 oy"];
@@ -69,29 +69,47 @@ const Kurslar = () => {
   const [form, setForm] = useState(defaultForm);
   const [filialOptions] = useState(["Filial 1", "Filial 2"]);
   const [deleteItem, setDeleteItem] = useState(null);
+  const [editItem, setEditItem] = useState(null);
+  const [archiveCourses, setArchiveCourses] = useState([]);
+
+  const formatCourse = (c, idx) => ({
+    id: c.id || idx + 1,
+    title: c.name || c.title || "Dasturlash",
+    description: c.description || "Tavsif berilmagan.",
+    duration: c.duration || `${c.duration_hours || 90} min`,
+    period: c.period || `${c.duration_month || 6} oy`,
+    price: c.price && typeof c.price === "string" ? c.price : `${Number(c.price || 1200000).toLocaleString()} so'm`,
+    rang: c.rang || rangli[idx % rangli.length] || "#7c3aed",
+  });
 
   const loadCourses = async () => {
     try {
       const data = await api.getCourses();
       const list = Array.isArray(data) ? data : data.data || [];
-      const formatted = list.map((c, idx) => ({
-        id: c.id || idx + 1,
-        title: c.name || "Dasturlash",
-        description: c.description || "Tavsif berilmagan.",
-        duration: `${c.duration_hours || 90} min`,
-        period: `${c.duration_month || 6} oy`,
-        price: c.price ? `${c.price.toLocaleString()} so'm` : "1 200 000 so'm",
-        rang: rangli[idx % rangli.length] || "#7c3aed",
-      }));
+      const formatted = list.map(formatCourse);
       if (formatted.length > 0) {
         setCourses(formatted);
         localStorage.setItem("lms_courses", JSON.stringify(formatted));
       } else {
-        useFallbackCourses();
+        setCourses([]);
       }
     } catch (err) {
-      console.warn("Backend API error, using localStorage fallback:", err);
-      useFallbackCourses();
+      console.warn("Backend API error:", err);
+      setCourses([]);
+    }
+  };
+
+  const loadArchiveCourses = async () => {
+    try {
+      const data = await api.getArchiveCourses();
+      const list = Array.isArray(data) ? data : data.data || [];
+      const formatted = list.map(formatCourse);
+      setArchiveCourses(formatted);
+      localStorage.setItem("lms_courses_archive", JSON.stringify(formatted));
+    } catch (err) {
+      console.warn("Archive API error:", err);
+      const stored = localStorage.getItem("lms_courses_archive");
+      setArchiveCourses(stored ? JSON.parse(stored) : []);
     }
   };
 
@@ -111,6 +129,7 @@ const Kurslar = () => {
 
   useEffect(() => {
     loadCourses();
+    loadArchiveCourses();
   }, []);
 
   const toggleFilial = (f) => {
@@ -123,37 +142,49 @@ const Kurslar = () => {
   };
 
   const handleSave = async () => {
-    if (!form.nomi.trim()) return;
+    if (!form.nomi.trim()) {
+      alert("Kurs nomini kiriting");
+      return;
+    }
+    if (!form.narx.trim() || !form.kursOy.trim() || !form.darsVaqt.trim()) {
+      alert("Iltimos kurs narxi, davomiyligi va dars vaqtini kiriting.");
+      return;
+    }
     try {
       const payload = {
         name: form.nomi,
         description: form.description || "Tavsif berilmagan.",
-        price: Number(form.narx) || 1200000,
-        duration_month: Number(form.kursOy.replace(/\D/g, "")) || 6,
-        duration_hours: Number(form.darsVaqt.replace(/\D/g, "")) || 90
+        price: Number(form.narx.replace(/\D/g, "")),
+        duration_month: Number(form.kursOy.replace(/\D/g, "")),
+        duration_hours: Number(form.darsVaqt.replace(/\D/g, ""))
       };
-      await api.createCourse(payload);
+      if (editItem) {
+        await api.updateCourse(editItem, payload);
+      } else {
+        await api.createCourse(payload);
+      }
       loadCourses();
       setForm(defaultForm);
+      setEditItem(null);
       setShowPanel(false);
     } catch (err) {
       console.error(err);
-      // Fallback local adding
-      const newCourse = {
-        id: Date.now(),
-        title: form.nomi,
-        description: form.description || "A little about the company and the team that you'll be working with. A li...",
-        duration: form.darsVaqt || "90 min",
-        period: form.kursOy || "3 oy",
-        price: form.narx ? `${form.narx} so'm` : "1 000 000 so'm",
-        rang: form.rang,
-      };
-      const updated = [...courses, newCourse];
-      setCourses(updated);
-      localStorage.setItem("lms_courses", JSON.stringify(updated));
-      setForm(defaultForm);
-      setShowPanel(false);
+      alert(err.message || "Kursni saqlashda xatolik yuz berdi");
     }
+  };
+
+  const handleEditClick = (course) => {
+    setEditItem(course.id);
+    setForm({
+      nomi: course.title || "",
+      filiallar: ["Filial 1", "Filial 2"],
+      darsVaqt: course.duration || "",
+      kursOy: course.period || "",
+      narx: String(course.price || "").replace(/\D/g, ""),
+      description: course.description || "",
+      rang: course.rang || "#7c3aed",
+    });
+    setShowPanel(true);
   };
 
   const handleDeleteClick = (id) => {
@@ -167,20 +198,23 @@ const Kurslar = () => {
         await api.deleteCourse(deleteItem);
       }
       const updated = courses.filter((c) => c.id !== deleteItem);
+      const deletedCourse = courses.find((c) => c.id === deleteItem);
+      const archived = deletedCourse ? [deletedCourse, ...archiveCourses] : archiveCourses;
       setCourses(updated);
+      setArchiveCourses(archived);
       localStorage.setItem("lms_courses", JSON.stringify(updated));
+      localStorage.setItem("lms_courses_archive", JSON.stringify(archived));
+      loadArchiveCourses();
     } catch (e) {
       console.error("Kursni o'chirishda xatolik:", e);
-      // Fallback local delete
-      const updated = courses.filter((c) => c.id !== deleteItem);
-      setCourses(updated);
-      localStorage.setItem("lms_courses", JSON.stringify(updated));
+      alert(e.message || "Kursni o'chirishda xatolik yuz berdi");
     } finally {
       setDeleteItem(null);
     }
   };
 
   const getCardColor = (i) => cardColors[i % cardColors.length];
+  const visibleCourses = activeFilial === "Arxiv" ? archiveCourses : courses;
 
   return (
     <div className="flex flex-1 overflow-hidden relative">
@@ -217,13 +251,25 @@ const Kurslar = () => {
           {/* Section Header */}
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[16px] font-semibold text-gray-800">Kurslar</h2>
-            <button
-              onClick={() => setShowPanel(true)}
-              className="flex items-center gap-1.5 bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-[13px] font-semibold px-4 py-2 rounded-lg transition-colors"
-            >
-              <Add sx={{ fontSize: 17 }} />
-              Kurslar qoshish
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveFilial("Arxiv")}
+                className={`text-[13px] font-semibold px-4 py-2 rounded-lg border transition-colors ${
+                  activeFilial === "Arxiv"
+                    ? "bg-gray-800 text-white border-gray-800"
+                    : "text-gray-600 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                Arxiv
+              </button>
+              <button
+                onClick={() => { setEditItem(null); setForm(defaultForm); setShowPanel(true); }}
+                className="flex items-center gap-1.5 bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-[13px] font-semibold px-4 py-2 rounded-lg transition-colors"
+              >
+                <Add sx={{ fontSize: 17 }} />
+                Kurslar qoshish
+              </button>
+            </div>
           </div>
 
           {/* Filial Tabs */}
@@ -244,13 +290,13 @@ const Kurslar = () => {
           </div>
 
           {/* Course Cards Grid */}
-          {courses.length === 0 ? (
+          {visibleCourses.length === 0 ? (
             <div className="py-16 text-center text-gray-400 text-[14px]">
-              Hozircha kurslar mavjud emas. "Kurslar qoshish" tugmasini bosing.
+              {activeFilial === "Arxiv" ? "Arxivda kurslar mavjud emas." : "Hozircha kurslar mavjud emas. \"Kurslar qoshish\" tugmasini bosing."}
             </div>
           ) : (
             <div className="grid grid-cols-4 gap-4">
-              {courses.map((course, i) => (
+              {visibleCourses.map((course, i) => (
                 <div key={course.id} className={`rounded-xl p-4 ${getCardColor(i)}`}>
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2 flex-1 pr-2">
@@ -260,17 +306,22 @@ const Kurslar = () => {
                       />
                       <h3 className="text-[13px] font-semibold text-gray-800 leading-tight">{course.title}</h3>
                     </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => handleDeleteClick(course.id)}
-                        className="text-red-400 hover:text-red-600 hover:bg-white rounded p-1 transition-colors"
-                      >
-                        <Delete sx={{ fontSize: 16 }} />
-                      </button>
-                      <button className="text-gray-400 hover:text-blue-500 hover:bg-white rounded p-1 transition-colors">
-                        <Edit sx={{ fontSize: 16 }} />
-                      </button>
-                    </div>
+                    {activeFilial !== "Arxiv" && (
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => handleDeleteClick(course.id)}
+                          className="text-red-400 hover:text-red-600 hover:bg-white rounded p-1 transition-colors"
+                        >
+                          <Delete sx={{ fontSize: 16 }} />
+                        </button>
+                        <button
+                          onClick={() => handleEditClick(course)}
+                          className="text-gray-400 hover:text-blue-500 hover:bg-white rounded p-1 transition-colors"
+                        >
+                          <Edit sx={{ fontSize: 16 }} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <p className="text-[11px] text-gray-500 mb-3 leading-relaxed line-clamp-2">{course.description}</p>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -303,10 +354,10 @@ const Kurslar = () => {
         {/* Panel Header */}
         <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
           <div>
-            <h2 className="text-[17px] font-bold text-gray-800">Kurs qoshish</h2>
-            <p className="text-[12px] text-gray-400 mt-0.5">Bu yerda siz yangi Sovg'a qo'shishingiz mumkin.</p>
+            <h2 className="text-[17px] font-bold text-gray-800">{editItem ? "Kursni o'zgartirish" : "Kurs qoshish"}</h2>
+            <p className="text-[12px] text-gray-400 mt-0.5">Bu yerda siz kurs ma'lumotlarini saqlashingiz mumkin.</p>
           </div>
-          <button onClick={() => setShowPanel(false)} className="text-gray-400 hover:text-gray-600 transition-colors mt-1">
+          <button onClick={() => { setShowPanel(false); setEditItem(null); setForm(defaultForm); }} className="text-gray-400 hover:text-gray-600 transition-colors mt-1">
             <Close sx={{ fontSize: 20 }} />
           </button>
         </div>
@@ -425,7 +476,7 @@ const Kurslar = () => {
         {/* Panel Footer */}
         <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
           <button
-            onClick={() => { setShowPanel(false); setForm(defaultForm); }}
+            onClick={() => { setShowPanel(false); setForm(defaultForm); setEditItem(null); }}
             className="px-6 py-2 rounded-lg border border-gray-300 text-[13px] font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
           >
             Bekor qilish
@@ -434,7 +485,7 @@ const Kurslar = () => {
             onClick={handleSave}
             className="px-6 py-2 rounded-lg bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-[13px] font-semibold transition-colors"
           >
-            Saqlash
+            {editItem ? "Yangilash" : "Saqlash"}
           </button>
         </div>
       </div>

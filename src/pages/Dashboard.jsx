@@ -41,8 +41,8 @@ const Dashboard = () => {
     };
 
     loadStats();
-  }, []);
-
+  }, []); 
+  
   return (
     <div className="p-6">
       <div className="mb-6">
