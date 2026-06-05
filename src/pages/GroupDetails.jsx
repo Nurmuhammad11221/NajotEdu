@@ -626,7 +626,9 @@ const GroupDetails = () => {
       ? "Dars o'tib ketgan"
       : "Joriy dars";
   const lastLesson = Object.values(savedLessons).at(-1);
-  const scheduleTopic = selectedSavedLesson?.topic || (typeof lastLesson === 'object' && lastLesson?.topic) || "Mavzu belgilanmagan";
+  const scheduleTopic = typeof (selectedSavedLesson?.topic || (typeof lastLesson === 'object' && lastLesson?.topic) || "Mavzu belgilanmagan") === 'string' 
+    ? (selectedSavedLesson?.topic || (typeof lastLesson === 'object' && lastLesson?.topic) || "Mavzu belgilanmagan")
+    : "Mavzu belgilanmagan";
 
   const handleSaveAttendance = async () => {
     if (!selectedLesson) {
@@ -689,17 +691,17 @@ const GroupDetails = () => {
     if (!selectedLesson) return;
     const key = formatLessonDateKey(selectedLesson);
     const storedLesson = savedLessons[key];
-    setLessonTopic(storedLesson?.topic || "");
-    setLessonDescription(storedLesson?.description || "");
-    setAttendance(storedLesson?.attendance || {});
+    setLessonTopic(typeof storedLesson?.topic === 'string' ? storedLesson.topic : "");
+    setLessonDescription(typeof storedLesson?.description === 'string' ? storedLesson.description : "");
+    setAttendance(typeof storedLesson?.attendance === 'object' ? storedLesson.attendance : {});
 
     api.getGroupLessonByDate(id, key)
       .then((data) => {
         const lesson = data?.data || data;
         if (lesson?.topic || lesson?.description || lesson?.attendance) {
-          setLessonTopic(lesson.topic || storedLesson?.topic || "");
-          setLessonDescription(lesson.description || storedLesson?.description || "");
-          setAttendance(lesson.attendance || storedLesson?.attendance || {});
+          setLessonTopic(typeof lesson.topic === 'string' ? lesson.topic : typeof storedLesson?.topic === 'string' ? storedLesson.topic : "");
+          setLessonDescription(typeof lesson.description === 'string' ? lesson.description : typeof storedLesson?.description === 'string' ? storedLesson.description : "");
+          setAttendance(typeof lesson.attendance === 'object' ? lesson.attendance : typeof storedLesson?.attendance === 'object' ? storedLesson.attendance : {});
         }
       })
       .catch(() => {});
@@ -854,7 +856,7 @@ const GroupDetails = () => {
                       <td className="py-4 px-6">{weekDaysStr}</td>
                       <td className="py-4 px-6">{startTimeStr} dan - gacha</td>
                       <td className="py-4 px-6">{formatDateLabel(normalizedStartDate)} - {formatDateLabel(courseEndDate)}</td>
-                      <td className="py-4 px-6 font-semibold text-gray-800">Mavzu: {scheduleTopic}</td>
+                      <td className="py-4 px-6 font-semibold text-gray-800">Mavzu: {typeof scheduleTopic === 'string' ? scheduleTopic : "Mavzu belgilanmagan"}</td>
                       <td className="py-4 px-6">F2 Autodesk // {currentStudentsCount}</td>
                     </tr>
                     <tr>
@@ -1023,7 +1025,7 @@ const GroupDetails = () => {
                       <input
                         type="text"
                         placeholder="Mavzuni kiriting..."
-                        value={lessonTopic}
+                        value={typeof lessonTopic === 'string' ? lessonTopic : ''}
                         onChange={(e) => setLessonTopic(e.target.value)}
                         disabled={!canEditLesson}
                         className={`w-full rounded-xl border border-gray-200 px-4 py-3 text-[14px] outline-none font-medium text-gray-800 placeholder-gray-400 ${!canEditLesson ? "bg-gray-50 cursor-not-allowed" : "bg-gray-50/50 focus:border-[#10b981] focus:bg-white"}`}
@@ -1034,7 +1036,7 @@ const GroupDetails = () => {
                       <label className="block text-[13px] font-bold text-gray-700 mb-2">Tavsif (ixtiyoriy)</label>
                       <textarea
                         placeholder="Dars haqida qo'shimcha ma'lumot..."
-                        value={lessonDescription}
+                        value={typeof lessonDescription === 'string' ? lessonDescription : ''}
                         onChange={(e) => setLessonDescription(e.target.value)}
                         disabled={!canEditLesson}
                         className={`w-full min-h-[100px] rounded-xl border border-gray-200 px-4 py-3 text-[14px] outline-none font-medium text-gray-800 placeholder-gray-400 resize-none ${!canEditLesson ? "bg-gray-50 cursor-not-allowed" : "bg-gray-50/50 focus:border-[#10b981] focus:bg-white"}`}
