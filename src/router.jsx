@@ -10,6 +10,8 @@
   import Xodimlar from "./pages/Xodimlar";
   import GroupDetails from "./pages/GroupDetails";
   import AddHomework from "./pages/AddHomework";
+  import HomeworkDetail from "./pages/HomeworkDetail";
+  import HomeworkReview from "./pages/HomeworkReview";
 
   export const router = createBrowserRouter([
     {
@@ -32,6 +34,8 @@
         { path: "groups/:id", element: <GroupDetails /> },
         { path: "groups/:id/homework", element: <AddHomework /> },
         { path: "groups/:id/homework/:lessonId", element: <AddHomework /> },
+        { path: "groups/:id/homework-detail/:homeworkId", element: <HomeworkDetail /> },
+        { path: "groups/:id/homework-detail/:homeworkId/review/:studentId", element: <HomeworkReview /> },
         { path: "xonalar", element: <Xonalar /> },
         { path: "xodimlar", element: <Xodimlar /> },
       ],

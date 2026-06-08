@@ -23,7 +23,7 @@ const Oqituvchilar = () => {
   const [teachers, setTeachers] = useState([]);
   const [page, setPage] = useState(1);
   const [showPanel, setShowPanel] = useState(false);
-  const [newTeacher, setNewTeacher] = useState({ name: "", phone: "", email: "", password: "", address: "" });
+  const [newTeacher, setNewTeacher] = useState({ name: "", phone: "", email: "", password: "", address: "", photo: null });
   const [deleteItem, setDeleteItem] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [archiveTeachers, setArchiveTeachers] = useState([]);
@@ -32,7 +32,7 @@ const Oqituvchilar = () => {
   const formatTeacher = (t, idx) => ({
     id: t.id || idx + 1,
     name: t.full_name || t.name || "Ismsiz o'qituvchi",
-    avatar: t.photo ? `https://najot-edu.softwareengineer.uz/${t.photo}` : `https://i.pravatar.cc/32?img=${(t.id || idx) % 50 + 10}`,
+    avatar: t.photo ? (t.photo.startsWith('http') ? t.photo : `https://najot-edu.softwareengineer.uz/${t.photo}`) : `https://i.pravatar.cc/32?img=${(t.id || idx) % 50 + 10}`,
     guruh: Array.isArray(t.groups) ? t.groups.map(g => typeof g === "object" ? g.name : g) : ["Yangi o'qituvchi"],
     phone: t.phone || "+998(00)000-00-00",
     email: t.email || "",
@@ -148,28 +148,36 @@ const Oqituvchilar = () => {
   };
 
   const handleAddTeacher = async () => {
-    if (!newTeacher.name) return;
+    if (!newTeacher.name) {
+      alert("Ismni kiriting");
+      return;
+    }
     try {
       const fd = new FormData();
       fd.append("full_name", newTeacher.name);
-      fd.append("phone", newTeacher.phone || "+998990000000");
-      fd.append("email", newTeacher.email || `${newTeacher.name.replace(/\s+/g, "").toLowerCase() || "teacher"}@gmail.com`);
-      if (!editItem || newTeacher.password) {
-        fd.append("password", newTeacher.password || "Teacher123!");
-      }
+      fd.append("phone", newTeacher.phone || "+998900000000");
+      fd.append("email", newTeacher.email || "teacher@example.com");
+      fd.append("password", newTeacher.password || "password123");
       fd.append("address", newTeacher.address || "Toshkent");
-      
-      if (editItem) {
-        await api.updateTeacher(editItem, fd);
-      } else {
-        await api.createTeacher(fd);
+      if (newTeacher.photo) {
+        fd.append("photo", newTeacher.photo);
       }
-      loadTeachers();
-      setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" });
+
+      let result;
+      if (editItem) {
+        result = await api.updateTeacher(editItem, fd);
+      } else {
+        result = await api.createTeacher(fd);
+      }
+
+      console.log('Teacher saved:', result);
+
+      await loadTeachers();
+      setNewTeacher({ name: "", phone: "", email: "", password: "", address: "", photo: null });
       setEditItem(null);
       setShowPanel(false);
     } catch (err) {
-      console.error(err);
+      console.error('Teacher save error:', err);
       alert(err.message || "O'qituvchini saqlashda xatolik yuz berdi");
     }
   };
@@ -182,6 +190,7 @@ const Oqituvchilar = () => {
       email: teacher.email || "",
       password: "",
       address: teacher.address || "",
+      photo: null,
     });
     setShowPanel(true);
   };
@@ -199,7 +208,7 @@ const Oqituvchilar = () => {
             Export
           </button>
           <button 
-            onClick={() => { setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" }); setShowPanel(true); }}
+            onClick={() => { setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "", photo: null }); setShowPanel(true); }}
             className="flex items-center gap-1.5 bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-[13px] font-semibold px-4 py-2 rounded-lg transition-colors"
           >
             <Add sx={{ fontSize: 17 }} />
@@ -350,75 +359,121 @@ const Oqituvchilar = () => {
 
       {/* ===== ADD TEACHER PANEL ===== */}
       {showPanel && (
-        <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => { setShowPanel(false); setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" }); }} />
+        <div className="fixed inset-0 bg-black/40 z-[60]" onClick={() => { setShowPanel(false); setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "", photo: null }); }} />
       )}
-      <div className={`fixed top-0 right-0 h-full w-[400px] bg-white shadow-2xl z-[70] transition-transform duration-300 transform ${showPanel ? "translate-x-0" : "translate-x-full"}`}>
+      <div className={`fixed top-0 right-0 h-full w-[450px] bg-white shadow-2xl z-[70] transition-transform duration-300 transform ${showPanel ? "translate-x-0" : "translate-x-full"}`}>
         <div className="p-6 h-full flex flex-col">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-xl font-bold text-gray-800">{editItem ? "O'qituvchini o'zgartirish" : "O'qituvchi qoshish"}</h2>
-            <button onClick={() => { setShowPanel(false); setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" }); }} className="text-gray-400 hover:text-gray-600">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">{editItem ? "O'qituvchini o'zgartirish" : "O'qituvchi qo'shish"}</h2>
+              <p className="text-[12px] text-gray-400 mt-0.5">Yangi o'qituvchi ma'lumotlarini kiriting</p>
+            </div>
+            <button onClick={() => { setShowPanel(false); setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "", photo: null }); }} className="text-gray-400 hover:text-gray-600">
               <Close />
             </button>
           </div>
           
-          <div className="space-y-4 flex-1">
+          <div className="flex-1 overflow-y-auto space-y-5">
             <div>
               <label className="block text-[13px] font-semibold text-gray-700 mb-1.5">F.I.SH</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="Ism sharifni kiriting"
                 value={newTeacher.name}
                 onChange={(e) => setNewTeacher({...newTeacher, name: e.target.value})}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:border-[#7c3aed] outline-none"
+                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-[14px] focus:border-[#7c3aed] outline-none"
               />
             </div>
+
             <div>
               <label className="block text-[13px] font-semibold text-gray-700 mb-1.5">Telefon raqam</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="+998"
                 value={newTeacher.phone}
                 onChange={(e) => setNewTeacher({...newTeacher, phone: e.target.value})}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:border-[#7c3aed] outline-none"
+                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-[14px] focus:border-[#7c3aed] outline-none"
               />
             </div>
+
             <div>
               <label className="block text-[13px] font-semibold text-gray-700 mb-1.5">E-pochta (Email)</label>
-              <input 
-                type="email" 
+              <input
+                type="email"
                 placeholder="teacher@example.com"
                 value={newTeacher.email}
                 onChange={(e) => setNewTeacher({...newTeacher, email: e.target.value})}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:border-[#7c3aed] outline-none"
+                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-[14px] focus:border-[#7c3aed] outline-none"
               />
             </div>
+
             <div>
               <label className="block text-[13px] font-semibold text-gray-700 mb-1.5">Tizimga kirish paroli</label>
-              <input 
-                type="password" 
+              <input
+                type="password"
                 placeholder="Parolni kiriting"
                 value={newTeacher.password}
                 onChange={(e) => setNewTeacher({...newTeacher, password: e.target.value})}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:border-[#7c3aed] outline-none"
+                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-[14px] focus:border-[#7c3aed] outline-none"
               />
             </div>
+
             <div>
               <label className="block text-[13px] font-semibold text-gray-700 mb-1.5">Manzil (Address)</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="Toshkent shahri..."
                 value={newTeacher.address}
                 onChange={(e) => setNewTeacher({...newTeacher, address: e.target.value})}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-[14px] focus:border-[#7c3aed] outline-none"
+                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-[14px] focus:border-[#7c3aed] outline-none"
               />
+            </div>
+
+            <div>
+              <label className="block text-[13px] font-semibold text-gray-700 mb-2">Rasm</label>
+              <div className="flex items-center gap-4">
+                {newTeacher.photo ? (
+                  <div className="relative">
+                    <img
+                      src={URL.createObjectURL(newTeacher.photo)}
+                      alt="Preview"
+                      className="w-24 h-24 rounded-full object-cover border-2 border-gray-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewTeacher({ ...newTeacher, photo: null })}
+                      className="absolute -top-2 -right-2 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center text-sm hover:bg-red-600 shadow-md"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-24 h-24 rounded-full bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
+                    <span className="text-gray-400 text-xs">Rasm</span>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        setNewTeacher({ ...newTeacher, photo: file });
+                      }
+                    }}
+                    className="w-full text-[13px] text-gray-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#7c3aed] file:text-white hover:file:bg-[#6d28d9]"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
           <div className="pt-6 border-t border-gray-100 flex gap-3">
-            <button onClick={() => { setShowPanel(false); setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "" }); }} className="flex-1 py-2 border border-gray-300 rounded-lg text-[14px] font-semibold text-gray-600 hover:bg-gray-50">
+            <button onClick={() => { setShowPanel(false); setEditItem(null); setNewTeacher({ name: "", phone: "", email: "", password: "", address: "", photo: null }); }} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-[14px] font-semibold text-gray-600 hover:bg-gray-50">
               Bekor qilish
             </button>
-            <button onClick={handleAddTeacher} className="flex-1 py-2 bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-lg text-[14px] font-semibold">
+            <button onClick={handleAddTeacher} className="flex-1 py-2.5 bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-lg text-[14px] font-semibold">
               {editItem ? "Yangilash" : "Saqlash"}
             </button>
           </div>

@@ -486,9 +486,9 @@ const Layout = () => {
               onChange={(e) => setLang(e.target.value)}
               className="text-[13px] text-gray-600 bg-white dark:bg-slate-800 dark:text-slate-100 border border-gray-100 border-opacity-50 shadow-sm rounded-xl px-3 py-2 outline-none cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
             >
-              <option value="uz">{t("uzbek")}</option>
-              <option value="ru">{t("russian")}</option>
-              <option value="en">{t("english")}</option>
+              <option value="uz">🇺🇿 {t("uzbek")}</option>
+              <option value="ru">🇷🇺 {t("russian")}</option>
+              <option value="en">🇬🇧 {t("english")}</option>
             </select>
             <button onClick={() => setDarkMode(!darkMode)} className="w-10 h-10 bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 border-opacity-50 shadow-sm dark:shadow-slate-950/30 rounded-full flex items-center justify-center hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-600 dark:text-slate-100">
               {darkMode ? <LightMode sx={{ fontSize: 18 }} /> : <DarkMode sx={{ fontSize: 18 }} />}

@@ -67,6 +67,8 @@ const GroupDetails = () => {
   // Attendance
   const [attendanceDate, setAttendanceDate] = useState("");
   const [attendedStudents, setAttendedStudents] = useState({});
+  const [attendanceTopic, setAttendanceTopic] = useState("");
+  const [savedAttendanceRecords, setSavedAttendanceRecords] = useState({});
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState("success");
   const [toastVisible, setToastVisible] = useState(false);
@@ -105,44 +107,66 @@ const GroupDetails = () => {
   const loadHomeworks = async () => {
     console.log('loadHomeworks called for group:', id);
     
+    let apiHomeworks = [];
+    
     // Try API first
     try {
       const data = await api.getHomeworks(id);
       console.log('Homeworks data received from API:', data);
-      
-      // Sort by creation date (newest at bottom)
-      const sorted = (data || []).sort((a, b) => {
-        const dateA = new Date(a.created_at || a.createdAt || 0);
-        const dateB = new Date(b.created_at || b.createdAt || 0);
-        return dateA - dateB; // Oldest first, newest at bottom
-      });
-      
-      setHomeworks(sorted);
-      return;
+      apiHomeworks = data || [];
     } catch (err) {
       console.error("Failed to load homeworks from API:", err);
     }
     
-    // Fallback to localStorage
+    // Always load from localStorage and merge
     try {
       const storageKey = `lms_homeworks_${id}`;
       const stored = localStorage.getItem(storageKey);
+      let localHomeworks = [];
+      
       if (stored) {
-        const localHomeworks = JSON.parse(stored);
+        localHomeworks = JSON.parse(stored);
         console.log('Loaded homeworks from localStorage:', localHomeworks);
-        const sorted = localHomeworks.sort((a, b) => {
-          const dateA = new Date(a.created_at || 0);
-          const dateB = new Date(b.created_at || 0);
-          return dateA - dateB;
-        });
-        setHomeworks(sorted);
-      } else {
-        console.log('No homeworks in localStorage');
-        setHomeworks([]);
       }
+      
+      // Merge API and localStorage homeworks, avoiding duplicates by id
+      const mergedMap = new Map();
+      
+      // Add API homeworks first
+      apiHomeworks.forEach(hw => {
+        const hwId = hw.id || hw._id;
+        if (hwId) {
+          mergedMap.set(hwId, hw);
+        }
+      });
+      
+      // Add/overwrite with localStorage homeworks (user's additions take priority)
+      localHomeworks.forEach(hw => {
+        const hwId = hw.id || hw._id;
+        if (hwId) {
+          mergedMap.set(hwId, hw);
+        }
+      });
+      
+      const merged = Array.from(mergedMap.values());
+      
+      // Sort by creation date (oldest first, newest at bottom)
+      const sorted = merged.sort((a, b) => {
+        const dateA = new Date(a.created_at || a.createdAt || 0);
+        const dateB = new Date(b.created_at || b.createdAt || 0);
+        return dateA - dateB;
+      });
+      
+      setHomeworks(sorted);
     } catch (e) {
       console.error('Failed to load from localStorage:', e);
-      setHomeworks([]);
+      // If localStorage fails, use API data only
+      const sorted = (apiHomeworks || []).sort((a, b) => {
+        const dateA = new Date(a.created_at || a.createdAt || 0);
+        const dateB = new Date(b.created_at || b.createdAt || 0);
+        return dateA - dateB;
+      });
+      setHomeworks(sorted);
     }
   };
 
@@ -160,6 +184,21 @@ const GroupDetails = () => {
       setLoading(true);
       const data = await api.getGroupById(id);
       setGroup(data);
+      
+      // If group has no students, try to load all students and filter by group
+      if (!data.students || data.students.length === 0) {
+        try {
+          const allStudents = await api.getStudents();
+          const groupStudents = allStudents.filter(s => 
+            s.groups && s.groups.some(g => String(g.id || g.group_id || g) === String(id))
+          );
+          if (groupStudents.length > 0) {
+            setGroup({ ...data, students: groupStudents });
+          }
+        } catch (e) {
+          console.error("Failed to load students:", e);
+        }
+      }
     } catch (err) {
       console.error("Failed to load group:", err);
     } finally {
@@ -552,6 +591,15 @@ const GroupDetails = () => {
     );
   };
 
+  const isAttendanceDatePast = () => {
+    if (!attendanceDate) return false;
+    const selectedDate = parseLocalDate(attendanceDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    selectedDate.setHours(0, 0, 0, 0);
+    return selectedDate < today;
+  };
+
   const handleSaveAttendanceByDate = async () => {
     if (!attendanceDate) {
       showToast("Sana tanlang", "error");
@@ -562,11 +610,42 @@ const GroupDetails = () => {
       showToast("Guruhda talabalar yo'q", "error");
       return;
     }
+    if (!attendanceTopic.trim()) {
+      showToast("Mavzu kiritish shart", "error");
+      return;
+    }
+    
+    // Check if the selected date is in the past
+    if (isAttendanceDatePast()) {
+      showToast("O'tgan kun uchun davomat qilib bo'lmaydi", "error");
+      return;
+    }
+    
     setSavingAttendance(true);
     try {
       await saveAttendanceForStudents(attendedStudents);
-      showToast("Davomat saqlandi", "success");
+      
+      const isLocked = attendanceTopic.trim().toUpperCase() === "TEST";
+      const record = {
+        date: attendanceDate,
+        topic: attendanceTopic.trim(),
+        attendedCount: Object.values(attendedStudents).filter(Boolean).length,
+        totalStudents: students.length,
+        attendedStudents,
+        locked: isLocked,
+        savedAt: new Date().toISOString()
+      };
+      
+      const updatedRecords = {
+        ...savedAttendanceRecords,
+        [attendanceDate]: record
+      };
+      setSavedAttendanceRecords(updatedRecords);
+      localStorage.setItem(`lms_group_${id}_attendance_records`, JSON.stringify(updatedRecords));
+      
+      showToast(isLocked ? "TEST davomati saqlandi va qulflandi" : "Davomat saqlandi", "success");
       setAttendanceDate("");
+      setAttendanceTopic("");
       setAttendedStudents({});
     } catch (e) {
       console.error('Failed to save attendance', e);
@@ -619,12 +698,15 @@ const GroupDetails = () => {
   const selectedLessonIsPast = selectedLessonStatus === "past";
   const selectedLessonIsFuture = selectedLessonStatus === "future";
   const selectedLessonIsToday = selectedLessonStatus === "today";
-  const canEditLesson = selectedLesson && !selectedLessonIsFuture;
-  const lessonStatusLabel = selectedLessonIsFuture
-    ? "Dars vaqti hali kelmagan"
-    : selectedLessonIsPast
-      ? "Dars o'tib ketgan"
-      : "Joriy dars";
+  const isLessonLocked = selectedSavedLesson && selectedSavedLesson.attendance;
+  const canEditLesson = selectedLesson && !selectedLessonIsFuture && !isLessonLocked;
+  const lessonStatusLabel = isLessonLocked
+    ? "Davomat saqlangan va qulflangan"
+    : selectedLessonIsFuture
+      ? "Dars vaqti hali kelmagan"
+      : selectedLessonIsPast
+        ? "Dars o'tib ketgan"
+        : "Joriy dars";
   const lastLesson = Object.values(savedLessons).at(-1);
   const scheduleTopic = typeof (selectedSavedLesson?.topic || (typeof lastLesson === 'object' && lastLesson?.topic) || "Mavzu belgilanmagan") === 'string' 
     ? (selectedSavedLesson?.topic || (typeof lastLesson === 'object' && lastLesson?.topic) || "Mavzu belgilanmagan")
@@ -685,6 +767,9 @@ const GroupDetails = () => {
   useEffect(() => {
     const stored = localStorage.getItem(`lms_group_${id}_lessons`);
     setSavedLessons(stored ? JSON.parse(stored) : {});
+    
+    const attendanceStored = localStorage.getItem(`lms_group_${id}_attendance_records`);
+    setSavedAttendanceRecords(attendanceStored ? JSON.parse(attendanceStored) : {});
   }, [id]);
 
   useEffect(() => {
@@ -780,6 +865,146 @@ const GroupDetails = () => {
           </button>
         ))}
       </div>
+
+      {/* Homework Modal - Moved here */}
+      {showSubmissionsModal && selectedHomework && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-3xl bg-white shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
+              <h2 className="text-lg font-bold text-gray-800">Topshiruvlar — {selectedHomework.title}</h2>
+              <button
+                onClick={() => {
+                  setShowSubmissionsModal(false);
+                  setSelectedHomework(null);
+                  setSubmissions([]);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="space-y-6">
+                {/* Bajarmaganlar - Not submitted */}
+                <div>
+                  {(() => {
+                    const groupStudents = getGroupStudents();
+                    const submittedStudentIds = new Set(
+                      (submissions || []).map(sub => String(sub.student_id || sub.student?.id))
+                    );
+                    const notSubmittedStudents = groupStudents.filter(
+                      student => !submittedStudentIds.has(String(student.id))
+                    );
+                    const notDoneSubmissions = (submissions || []).filter(
+                      sub => !sub.status || sub.status === 'not_done' || sub.status === 'not_submitted'
+                    );
+                    const allNotDone = [
+                      ...notSubmittedStudents.map(student => ({ student, status: 'not_done' })),
+                      ...notDoneSubmissions
+                    ];
+
+                    return (
+                      <>
+                        <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                          Bajarmaganlar ({allNotDone.length})
+                        </h3>
+                        <div className="space-y-2">
+                          {allNotDone.length === 0 ? (
+                            <p className="text-sm text-gray-400 italic py-2">Bajarmagan talabalar yo'q</p>
+                          ) : (
+                            allNotDone.map((item, idx) => {
+                              const student = item.student || item.student?.student || item;
+                              const studentName = student?.full_name || student?.name || item.student_name || 'Noma\'lum';
+                              const studentInitial = studentName ? studentName[0] : '?';
+                              return (
+                                <div key={student?.id || item.id || idx} className="rounded-xl bg-red-50 border border-red-100 p-3 flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-full bg-white border border-red-200 flex items-center justify-center text-gray-700 font-bold text-sm">
+                                      {studentInitial}
+                                    </div>
+                                    <div>
+                                      <div className="font-semibold text-gray-800 text-sm">{studentName}</div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {/* Kutyotganlar - Pending */}
+                <div>
+                  <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
+                    Kutyotganlar ({(submissions || []).filter(sub => sub.status === 'pending' || sub.status === 'kutayotgan').length})
+                  </h3>
+                  <div className="space-y-2">
+                    {(submissions || []).filter(sub => sub.status === 'pending' || sub.status === 'kutayotgan').length === 0 ? (
+                      <p className="text-sm text-gray-400 italic py-2">Kutyotgan talabalar yo'q</p>
+                    ) : (
+                      (submissions || []).filter(sub => sub.status === 'pending' || sub.status === 'kutayotgan').map((sub) => (
+                        <div key={sub.id || sub._id} className="rounded-xl bg-yellow-50 border border-yellow-100 p-3 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-white border border-yellow-200 flex items-center justify-center text-gray-700 font-bold text-sm">
+                              {(sub.student && sub.student.name) ? sub.student.name[0] : (sub.student_name ? sub.student_name[0] : '?')}
+                            </div>
+                            <div>
+                              <div className="font-semibold text-gray-800 text-sm">{(sub.student && (sub.student.name || sub.student.full_name)) || sub.student_name || 'Noma\'lum'}</div>
+                              <div className="text-xs text-gray-500">Topshirilgan: {new Date(sub.created_at || sub.submitted_at || Date.now()).toLocaleString('uz-UZ')}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-sm text-gray-600">Fayllar: <strong>{Array.isArray(sub.files) ? sub.files.length : (sub.files_count || 0)}</strong></div>
+                            <div className="flex gap-2">
+                              <button onClick={() => handleUpdateSubmissionStatus(sub.id || sub._id, 'accepted')} className="bg-green-500 text-white px-3 py-1 rounded-md text-xs font-semibold hover:bg-green-600">Qabul qilish</button>
+                              <button onClick={() => handleUpdateSubmissionStatus(sub.id || sub._id, 'returned')} className="bg-red-500 text-white px-3 py-1 rounded-md text-xs font-semibold hover:bg-red-600">Qaytarish</button>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* O'tganlar - Passed/Accepted */}
+                <div>
+                  <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-green-500"></span>
+                    O'tganlar ({(submissions || []).filter(sub => sub.status === 'accepted' || sub.status === 'passed' || sub.status === 'qabul_qilingan').length})
+                  </h3>
+                  <div className="space-y-2">
+                    {(submissions || []).filter(sub => sub.status === 'accepted' || sub.status === 'passed' || sub.status === 'qabul_qilingan').length === 0 ? (
+                      <p className="text-sm text-gray-400 italic py-2">O'tgan talabalar yo'q</p>
+                    ) : (
+                      (submissions || []).filter(sub => sub.status === 'accepted' || sub.status === 'passed' || sub.status === 'qabul_qilingan').map((sub) => (
+                        <div key={sub.id || sub._id} className="rounded-xl bg-green-50 border border-green-100 p-3 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-white border border-green-200 flex items-center justify-center text-gray-700 font-bold text-sm">
+                              {(sub.student && sub.student.name) ? sub.student.name[0] : (sub.student_name ? sub.student_name[0] : '?')}
+                            </div>
+                            <div>
+                              <div className="font-semibold text-gray-800 text-sm">{(sub.student && (sub.student.name || sub.student.full_name)) || sub.student_name || 'Noma\'lum'}</div>
+                              <div className="text-xs text-gray-500">Topshirilgan: {new Date(sub.created_at || sub.submitted_at || Date.now()).toLocaleString('uz-UZ')}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-sm text-gray-600">Fayllar: <strong>{Array.isArray(sub.files) ? sub.files.length : (sub.files_count || 0)}</strong></div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden pb-10 custom-scrollbar">
@@ -992,7 +1217,7 @@ const GroupDetails = () => {
 
                       <div>
                         <p className="text-[12px] text-gray-400 font-semibold mb-1">Holat</p>
-                        <p className={`font-bold text-[14px] ${selectedLessonIsToday ? "text-[#10b981]" : "text-gray-500"}`}>{lessonStatusLabel}</p>
+                        <p className={`font-bold text-[14px] ${isLessonLocked ? "text-red-600" : selectedLessonIsToday ? "text-[#10b981]" : "text-gray-500"}`}>{lessonStatusLabel}</p>
                       </div>
                     </div>
                     {/* Right arrow icon */}
@@ -1002,8 +1227,16 @@ const GroupDetails = () => {
                   </div>
 
                   {/* Yo'qlama va mavzu kiritish */}
-                  <div className="bg-white border border-gray-100 rounded-2xl p-6 mb-6 shadow-sm">
-                    <h4 className="text-[15px] font-bold text-gray-800 mb-6">Yo'qlama va mavzu kiritish</h4>
+                  <div className={`bg-white border border-gray-100 rounded-2xl p-6 mb-6 shadow-sm ${isLessonLocked ? "cursor-not-allowed" : ""}`} style={isLessonLocked ? { cursor: "not-allowed", userSelect: "none" } : {}}>
+                    <div className="flex items-center justify-between mb-6">
+                      <h4 className="text-[15px] font-bold text-gray-800">Yo'qlama va mavzu kiritish</h4>
+                      {isLessonLocked && (
+                        <div className="flex items-center gap-2 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg">
+                          <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                          <span className="text-[12px] font-bold text-red-600">Qulflangan</span>
+                        </div>
+                      )}
+                    </div>
                     
                     <div className="flex items-center gap-6 mb-8">
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -1045,7 +1278,7 @@ const GroupDetails = () => {
                   </div>
 
                   {/* Table */}
-                  <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm mb-6">
+                  <div className={`bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm mb-6 ${isLessonLocked ? "cursor-not-allowed" : ""}`} style={isLessonLocked ? { cursor: "not-allowed", userSelect: "none" } : {}}>
                     <div className="grid grid-cols-[80px_1fr_120px] bg-white border-b border-gray-100 px-6 py-4 text-[13px] font-bold text-gray-500">
                       <span>#</span>
                       <span>O'quvchi ismi</span>
@@ -1054,6 +1287,12 @@ const GroupDetails = () => {
                     {selectedLessonIsFuture && (
                       <div className="bg-blue-50 border-b border-blue-100 px-6 py-3 text-[13px] font-medium text-blue-700">
                         Bu kun uchun dars vaqti hali kelmagan.
+                      </div>
+                    )}
+                    {isLessonLocked && (
+                      <div className="bg-red-50 border-b border-red-100 px-6 py-3 text-[13px] font-medium text-red-700 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                        Davomat allaqachon saqlangan va o'zgartirib bo'lmaydi.
                       </div>
                     )}
                     <div className="divide-y divide-gray-100/60">
@@ -1084,6 +1323,7 @@ const GroupDetails = () => {
                                   }}
                                   disabled={!canEditLesson || !studentId}
                                   className={`relative h-[22px] w-[38px] rounded-full transition-colors ${isPresent ? "bg-[#10b981]" : "bg-gray-300"} ${!canEditLesson ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                                  style={isLessonLocked ? { cursor: "not-allowed" } : {}}
                                 >
                                   <span className={`absolute top-[2px] left-[2px] block h-[18px] w-[18px] rounded-full bg-white transition-transform ${isPresent ? "translate-x-[16px]" : "translate-x-0"}`} />
                                 </button>
@@ -1097,14 +1337,21 @@ const GroupDetails = () => {
 
                   {/* Saqlash Button */}
                   <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={handleSaveAttendance}
-                      disabled={savingAttendance || !lessonTopic.trim() || !canEditLesson}
-                      className={`rounded-lg px-10 py-3 text-[14px] font-bold text-white shadow-sm ${!canEditLesson ? "bg-gray-400 cursor-not-allowed" : "bg-[#7c3aed] hover:bg-[#6d28d9]"} disabled:cursor-not-allowed disabled:opacity-50`}
-                    >
-                      {savingAttendance ? "Saqlanmoqda..." : "Saqlash"}
-                    </button>
+                    {isLessonLocked ? (
+                      <div className="flex items-center gap-2 bg-gray-100 border border-gray-200 rounded-lg px-6 py-3 text-[14px] font-semibold text-gray-500">
+                        <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                        Davomat allaqachon saqlangan
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSaveAttendance}
+                        disabled={savingAttendance || !lessonTopic.trim() || !canEditLesson}
+                        className={`rounded-lg px-10 py-3 text-[14px] font-bold text-white shadow-sm ${!canEditLesson ? "bg-gray-400 cursor-not-allowed" : "bg-[#7c3aed] hover:bg-[#6d28d9]"} disabled:cursor-not-allowed disabled:opacity-50`}
+                      >
+                        {savingAttendance ? "Saqlanmoqda..." : "Saqlash"}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -1168,38 +1415,6 @@ const GroupDetails = () => {
               <div className="overflow-x-auto">
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-sm text-gray-500">Jami: {homeworks.length} ta vazifa</p>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => {
-                        // Add test homework for debugging
-                        const storageKey = `lms_homeworks_${id}`;
-                        const existing = JSON.parse(localStorage.getItem(storageKey) || '[]');
-                        const testHomework = {
-                          id: Date.now(),
-                          title: 'Test vazifa',
-                          description: 'Bu test vazifadir',
-                          group_id: Number(id),
-                          created_at: new Date().toISOString(),
-                          status: 'active',
-                          max_score: 5,
-                          pass_score: 0,
-                        };
-                        existing.push(testHomework);
-                        localStorage.setItem(storageKey, JSON.stringify(existing));
-                        console.log('Test homework added:', testHomework);
-                        loadHomeworks();
-                      }}
-                      className="text-xs bg-red-500 text-white px-2 py-1 rounded"
-                    >
-                      Test qo'shish
-                    </button>
-                    <button 
-                      onClick={() => loadHomeworks()}
-                      className="text-xs text-[#7c3aed] font-semibold hover:underline"
-                    >
-                      Yangilash
-                    </button>
-                  </div>
                 </div>
                 <table className="w-full text-left border-t border-gray-100">
                   <thead>
@@ -1219,21 +1434,12 @@ const GroupDetails = () => {
                     {homeworks.map((hw, index) => {
                       console.log('Rendering homework:', hw);
                       return (
-                        <tr 
-                          key={hw.id || hw._id || index} 
+                        <tr
+                          key={hw.id || hw._id || index}
                           className="hover:bg-gray-50/50 cursor-pointer"
-                          onClick={async () => {
-                            const hwObj = { id: hw.id || hw._id, title: hw.title || hw.topic || hw.name };
-                            setSelectedHomework(hwObj);
-                            setShowSubmissionsModal(true);
-                            try {
-                              const subs = await api.getHomeworkSubmissions(hwObj.id);
-                              const list = Array.isArray(subs) ? subs : subs.data || [];
-                              setSubmissions(list);
-                            } catch (e) {
-                              console.error('Failed to load submissions', e);
-                              setSubmissions([]);
-                            }
+                          onClick={() => {
+                            const hwId = hw.homework?.[0]?.id || hw.id || hw._id;
+                            navigate(`/dashboard/groups/${id}/homework-detail/${hwId}`, { state: { homework: hw } });
                           }}
                         >
                           <td className="py-4 px-4">{index + 1}</td>
@@ -1256,18 +1462,8 @@ const GroupDetails = () => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const hwObj = { id: hw.id || hw._id, title: hw.title || hw.topic || hw.name };
-                                setSelectedHomework(hwObj);
-                                setShowSubmissionsModal(true);
-                                api.getHomeworkSubmissions(hwObj.id)
-                                  .then(subs => {
-                                    const list = Array.isArray(subs) ? subs : subs.data || [];
-                                    setSubmissions(list);
-                                  })
-                                  .catch(e => {
-                                    console.error('Failed to load submissions', e);
-                                    setSubmissions([]);
-                                  });
+                                const hwId = hw.homework?.[0]?.id || hw.id || hw._id;
+                                navigate(`/dashboard/groups/${id}/homework-detail/${hwId}`, { state: { homework: hw } });
                               }}
                               className="p-1"
                               title="Topshiruvlarni ko'rish"
@@ -1444,6 +1640,20 @@ const GroupDetails = () => {
 
               {attendanceDate && (
                 <div className="mb-6">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Mavzu</label>
+                  <input
+                    type="text"
+                    placeholder="Mavzu nomini kiriting (masalan: TEST)"
+                    value={attendanceTopic}
+                    onChange={(e) => setAttendanceTopic(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none focus:border-[#7c3aed]"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Agar mavzu "TEST" bo'lsa, u o'zgartirib bo'lmaydigan bo'ladi</p>
+                </div>
+              )}
+
+              {attendanceDate && (
+                <div className="mb-6">
                   <h4 className="text-sm font-semibold text-gray-700 mb-4">Talabalar ({getGroupStudents().length})</h4>
                   <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-4 bg-gray-50">
                     {getGroupStudents().length === 0 ? (
@@ -1483,20 +1693,59 @@ const GroupDetails = () => {
                 <div className="flex gap-3">
                   <button
                     onClick={handleSaveAttendanceByDate}
-                    disabled={!attendanceDate || savingAttendance}
+                    disabled={!attendanceDate || savingAttendance || isAttendanceDatePast()}
                     className="flex-1 bg-[#7c3aed] text-white px-6 py-2.5 rounded-lg font-semibold text-sm hover:bg-[#6d28d9] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {savingAttendance ? "Saqlanmoqda..." : "Davomatni saqlash"}
+                    {savingAttendance ? "Saqlanmoqda..." : isAttendanceDatePast() ? "O'tgan kun" : "Davomatni saqlash"}
                   </button>
                   <button
                     onClick={() => {
                       setAttendanceDate("");
+                      setAttendanceTopic("");
                       setAttendedStudents({});
                     }}
                     className="px-6 py-2.5 rounded-lg border border-gray-200 font-semibold text-sm text-gray-700 hover:bg-gray-50"
                   >
                     Tozalash
                   </button>
+                </div>
+              )}
+
+              {/* Saved Attendance Records */}
+              {Object.keys(savedAttendanceRecords).length > 0 && (
+                <div className="mt-8 border-t border-gray-200 pt-6">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-4">Saqlangan davomatlar</h4>
+                  <div className="space-y-3">
+                    {Object.values(savedAttendanceRecords)
+                      .sort((a, b) => new Date(b.date) - new Date(a.date))
+                      .map((record) => (
+                        <div 
+                          key={record.date} 
+                          className={`p-4 rounded-lg border ${record.locked ? 'bg-gray-100 border-gray-300 cursor-not-allowed' : 'bg-white border-gray-200'}`}
+                          title={record.locked ? "Bu davomat o'zgartirib bo'lmaydi" : ""}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-3">
+                              <span className="text-sm font-semibold text-gray-800">{record.date}</span>
+                              {record.locked && (
+                                <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded font-bold">QULFLANGAN</span>
+                              )}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              {record.attendedCount}/{record.totalStudents} keldi
+                            </div>
+                          </div>
+                          <div className="text-sm font-medium text-gray-700">
+                            Mavzu: <span className={record.locked ? "text-gray-900 font-bold" : "text-[#7c3aed]"}>{record.topic}</span>
+                          </div>
+                          {record.locked && (
+                            <div className="mt-2 text-xs text-red-600 font-medium">
+                              ⚠️ Bu davomat o'zgartirib bo'lmaydi
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -1525,28 +1774,54 @@ const GroupDetails = () => {
               <div className="space-y-6">
                 {/* Bajarmaganlar - Not submitted */}
                 <div>
-                  <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-red-500"></span>
-                    Bajarmaganlar ({(submissions || []).filter(sub => !sub.status || sub.status === 'not_done' || sub.status === 'not_submitted').length})
-                  </h3>
-                  <div className="space-y-2">
-                    {(submissions || []).filter(sub => !sub.status || sub.status === 'not_done' || sub.status === 'not_submitted').length === 0 ? (
-                      <p className="text-sm text-gray-400 italic py-2">Bajarmagan talabalar yo'q</p>
-                    ) : (
-                      (submissions || []).filter(sub => !sub.status || sub.status === 'not_done' || sub.status === 'not_submitted').map((sub) => (
-                        <div key={sub.id || sub._id || sub.student_id} className="rounded-xl bg-red-50 border border-red-100 p-3 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-white border border-red-200 flex items-center justify-center text-gray-700 font-bold text-sm">
-                              {(sub.student && sub.student.name) ? sub.student.name[0] : (sub.student_name ? sub.student_name[0] : '?')}
-                            </div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">{(sub.student && (sub.student.name || sub.student.full_name)) || sub.student_name || 'Noma\'lum'}</div>
-                            </div>
-                          </div>
+                  {(() => {
+                    const groupStudents = getGroupStudents();
+                    const submittedStudentIds = new Set(
+                      (submissions || []).map(sub => String(sub.student_id || sub.student?.id))
+                    );
+                    const notSubmittedStudents = groupStudents.filter(
+                      student => !submittedStudentIds.has(String(student.id))
+                    );
+                    const notDoneSubmissions = (submissions || []).filter(
+                      sub => !sub.status || sub.status === 'not_done' || sub.status === 'not_submitted'
+                    );
+                    const allNotDone = [
+                      ...notSubmittedStudents.map(student => ({ student, status: 'not_done' })),
+                      ...notDoneSubmissions
+                    ];
+
+                    return (
+                      <>
+                        <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                          Bajarmaganlar ({allNotDone.length})
+                        </h3>
+                        <div className="space-y-2">
+                          {allNotDone.length === 0 ? (
+                            <p className="text-sm text-gray-400 italic py-2">Bajarmagan talabalar yo'q</p>
+                          ) : (
+                            allNotDone.map((item, idx) => {
+                              const student = item.student || item.student?.student || item;
+                              const studentName = student?.full_name || student?.name || item.student_name || 'Noma\'lum';
+                              const studentInitial = studentName ? studentName[0] : '?';
+                              return (
+                                <div key={student?.id || item.id || idx} className="rounded-xl bg-red-50 border border-red-100 p-3 flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-full bg-white border border-red-200 flex items-center justify-center text-gray-700 font-bold text-sm">
+                                      {studentInitial}
+                                    </div>
+                                    <div>
+                                      <div className="font-semibold text-gray-800 text-sm">{studentName}</div>
+                                    </div>
+                                  </div>.v                                                                                                                                                                                                                            
+                                </div>
+                              );
+                            })
+                          )}
                         </div>
-                      ))
-                    )}
-                  </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Kutyotganlar - Pending */}

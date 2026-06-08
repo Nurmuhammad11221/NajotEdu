@@ -118,19 +118,56 @@ const Guruhlar = () => {
       // If backend provides an endpoint, use it. Otherwise fallback to localStorage.
       const data = await (api.getArchiveGroups ? api.getArchiveGroups() : Promise.resolve(null));
       const list = Array.isArray(data) ? data : data?.data || [];
-      const formatted = list.map((g, idx) => ({
-        id: g.id || idx + 1,
-        status: true,
-        nomi: g.name || "Guruh",
-        kurs: g.course?.name || g.course?.title || "Dasturlash",
-        davomiyligi: "6 oy",
-        vaqt: g.start_time || "09:00",
-        sana: formatDateLabel(g.start_date || g.startDate || ""),
-        kunlar: formatWeekdayList(g.week_day) || "Dushanba",
-        xona: g.room?.name || "Xona",
-        oqituvchi: Array.isArray(g.teachers) && g.teachers[0] ? g.teachers[0].full_name || g.teachers[0].name : "Mohirbek",
-        talabalar: Array.isArray(g.students) ? g.students.length : 0,
-      }));
+      
+      const allTeachers = await api.getTeachers();
+      const teachersById = new Map();
+      (Array.isArray(allTeachers) ? allTeachers : []).forEach((teacher) => {
+        const id = Number(teacher?.id ?? teacher?._id);
+        if (Number.isFinite(id) && id > 0) teachersById.set(id, teacher);
+      });
+
+      const formatted = list.map((g, idx) => {
+        const rawTeachers = g.teachers ?? g.teacher_ids ?? g.teacher_list ?? [];
+        const normalizedTeachers = (Array.isArray(rawTeachers) ? rawTeachers : [])
+          .map((entry) => {
+            if (typeof entry === "number" || (typeof entry === "string" && /^\d+$/.test(entry.trim()))) {
+              const id = Number(entry);
+              const found = teachersById.get(id);
+              if (found) {
+                return {
+                  id: found.id,
+                  name: found.full_name || found.name,
+                  photo: found.photo
+                };
+              }
+              return null;
+            }
+            if (typeof entry === "object") {
+              return {
+                id: entry.id ?? entry._id,
+                name: entry.full_name || entry.name,
+                photo: entry.photo
+              };
+            }
+            return null;
+          })
+          .filter(Boolean);
+
+        return {
+          id: g.id || idx + 1,
+          status: true,
+          nomi: g.name || "Guruh",
+          kurs: g.course?.name || g.course?.title || "Dasturlash",
+          davomiyligi: "6 oy",
+          vaqt: g.start_time || "09:00",
+          sana: formatDateLabel(g.start_date || g.startDate || ""),
+          kunlar: formatWeekdayList(g.week_day) || "Dushanba",
+          xona: g.room?.name || "Xona",
+          oqituvchi: normalizedTeachers,
+          oqituvchiNames: normalizedTeachers.length > 0 ? normalizedTeachers.map(t => t.name).join(", ") : "Mohirbek",
+          talabalar: Array.isArray(g.students) ? g.students.length : 0,
+        };
+      });
       setArchiveGroups(formatted);
       localStorage.setItem("lms_groups_archive", JSON.stringify(formatted));
     } catch (err) {
@@ -140,6 +177,7 @@ const Guruhlar = () => {
     }
   };
   const [showTalabaModal, setShowTalabaModal] = useState(false);
+  const [showOqituvchiModal, setShowOqituvchiModal] = useState(false);
   const [rooms, setRooms] = useState([]);
   const [courses, setCourses] = useState([]);
   const [teachers, setTeachers] = useState([]);
@@ -157,8 +195,42 @@ const Guruhlar = () => {
       const storedArchive = storedArchiveStr ? JSON.parse(storedArchiveStr) : [];
       const archivedIds = new Set(storedArchive.map(g => g.id));
 
+      const allTeachers = await api.getTeachers();
+      const teachersById = new Map();
+      (Array.isArray(allTeachers) ? allTeachers : []).forEach((teacher) => {
+        const id = Number(teacher?.id ?? teacher?._id);
+        if (Number.isFinite(id) && id > 0) teachersById.set(id, teacher);
+      });
+
       const formatted = list.map((g, idx) => {
         const rawStartDate = g.start_date || g.startDate || g.created_at || g.createdAt || "";
+        
+        const rawTeachers = g.teachers ?? g.teacher_ids ?? g.teacher_list ?? [];
+        const normalizedTeachers = (Array.isArray(rawTeachers) ? rawTeachers : [])
+          .map((entry) => {
+            if (typeof entry === "number" || (typeof entry === "string" && /^\d+$/.test(entry.trim()))) {
+              const id = Number(entry);
+              const found = teachersById.get(id);
+              if (found) {
+                return {
+                  id: found.id,
+                  name: found.full_name || found.name,
+                  photo: found.photo
+                };
+              }
+              return null;
+            }
+            if (typeof entry === "object") {
+              return {
+                id: entry.id ?? entry._id,
+                name: entry.full_name || entry.name,
+                photo: entry.photo
+              };
+            }
+            return null;
+          })
+          .filter(Boolean);
+
         return {
           id: g.id || idx + 1,
           status: true,
@@ -169,7 +241,8 @@ const Guruhlar = () => {
           sana: formatDateLabel(rawStartDate),
           kunlar: formatWeekdayList(g.week_day) || "Dushanba",
           xona: g.room?.name || "Xona",
-          oqituvchi: Array.isArray(g.teachers) && g.teachers[0] ? g.teachers[0].full_name || g.teachers[0].name : "Mohirbek",
+          oqituvchi: normalizedTeachers,
+          oqituvchiNames: normalizedTeachers.length > 0 ? normalizedTeachers.map(t => t.name).join(", ") : "Mohirbek",
           talabalar: Array.isArray(g.students) ? g.students.length : 0,
         };
       }).filter(g => !archivedIds.has(g.id));
@@ -277,11 +350,12 @@ const Guruhlar = () => {
     vaqt: "09:00",
     sana: "",
     tavsif: "",
-    oqituvchi: "",
+    oqituvchiIds: [],
     talabalarIds: [],
   });
 
   const [talabaSearch, setTalabaSearch] = useState("");
+  const [oqituvchiSearch, setOqituvchiSearch] = useState("");
 
   const toggleKun = (kun) => {
     setForm((prev) => ({
@@ -298,6 +372,15 @@ const Guruhlar = () => {
       talabalarIds: prev.talabalarIds.includes(id)
         ? prev.talabalarIds.filter((tId) => tId !== id)
         : [...prev.talabalarIds, id],
+    }));
+  };
+
+  const toggleOqituvchi = (id) => {
+    setForm((prev) => ({
+      ...prev,
+      oqituvchiIds: prev.oqituvchiIds.includes(id)
+        ? prev.oqituvchiIds.filter((tId) => tId !== id)
+        : [...prev.oqituvchiIds, id],
     }));
   };
 
@@ -335,8 +418,8 @@ const toggleStatus = (id) => {
       alert("Guruh nomini kiriting");
       return;
     }
-    if (!form.kurs || !form.oqituvchi || !form.xona || !form.sana || !form.vaqt || !form.kunlar.length) {
-      alert("Iltimos barcha majburiy maydonlarni to'ldiring: kurs, xona, dars vaqti, boshlanish sanasi va dars kunlari.");
+    if (!form.kurs || !form.oqituvchiIds.length || !form.xona || !form.sana || !form.vaqt || !form.kunlar.length) {
+      alert("Iltimos barcha majburiy maydonlarni to'ldiring: kurs, o'qituvchi, xona, dars vaqti, boshlanish sanasi va dars kunlari.");
       return;
     }
     try {
@@ -354,7 +437,7 @@ const toggleStatus = (id) => {
         name: form.nomi,
         description: form.tavsif || "Guruh tavsifi",
         course_id: Number(form.kurs),
-        teachers: [Number(form.oqituvchi)],
+        teachers: form.oqituvchiIds.map(Number),
         students: form.talabalarIds.map(Number),
         room_id: Number(form.xona),
         start_date: form.sana,
@@ -367,7 +450,7 @@ const toggleStatus = (id) => {
       await api.createGroup(payload);
       loadGroups();
       setShowPanel(false);
-      setForm({ nomi: "", kurs: "", xona: "", kunlar: [], vaqt: "09:00", sana: "", tavsif: "", oqituvchi: "", talabalarIds: [] });
+      setForm({ nomi: "", kurs: "", xona: "", kunlar: [], vaqt: "09:00", sana: "", tavsif: "", oqituvchiIds: [], talabalarIds: [] });
     } catch (err) {
       console.error('Group creation error:', err);
       const errorMessage = err.message || err.error || "Guruh qo'shishda xatolik yuz berdi";
@@ -499,7 +582,54 @@ const toggleStatus = (id) => {
                     <div className="text-[11px] text-gray-500 mt-0.5">{g.kunlar}</div>
                   </td>
                   <td className="px-4 py-4 text-gray-600 font-medium">{g.xona}</td>
-                  <td className="px-4 py-4 font-bold text-gray-800">{g.oqituvchi}</td>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center justify-center gap-2">
+                      {Array.isArray(g.oqituvchi) && g.oqituvchi.length > 0 ? (
+                        <div className="relative group">
+                          {g.oqituvchi.map((t, i) => (
+                            <div 
+                              key={i} 
+                              className={`flex items-center gap-1 ${i === 0 ? 'opacity-100' : 'opacity-0 absolute top-0 left-0'} group-hover:opacity-0 transition-opacity duration-300`}
+                              style={{ animation: i === 0 ? 'none' : 'rotateIn 0.3s ease-in-out forwards' }}
+                            >
+                              {t.photo ? (
+                                <img 
+                                  src={t.photo.startsWith('http') ? t.photo : `https://najot-edu.softwareengineer.uz/${t.photo}`} 
+                                  alt={t.name}
+                                  className="w-8 h-8 rounded-full object-cover border border-gray-200"
+                                />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-xs font-bold">
+                                  {t.name ? t.name[0] : '?'}
+                                </div>
+                              )}
+                              <span className="text-[12px] font-semibold text-gray-800">{t.name}</span>
+                            </div>
+                          ))}
+                          <div className="hidden group-hover:flex flex-col gap-1 absolute top-0 left-0 bg-white border border-gray-200 rounded-lg p-2 shadow-lg z-10 min-w-[150px]">
+                            {g.oqituvchi.map((t, i) => (
+                              <div key={i} className="flex items-center gap-2 text-[12px] font-semibold text-gray-800">
+                                {t.photo ? (
+                                  <img 
+                                    src={t.photo.startsWith('http') ? t.photo : `https://najot-edu.softwareengineer.uz/${t.photo}`} 
+                                    alt={t.name}
+                                    className="w-6 h-6 rounded-full object-cover border border-gray-200"
+                                  />
+                                ) : (
+                                  <div className="w-6 h-6 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-[10px] font-bold">
+                                    {t.name ? t.name[0] : '?'}
+                                  </div>
+                                )}
+                                {t.name}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-[13px] font-semibold text-gray-800">{g.oqituvchiNames || "Mohirbek"}</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-4 font-bold text-gray-800">{g.talabalar}</td>
                   <td className="px-4 py-4">
             <button
@@ -625,18 +755,17 @@ const toggleStatus = (id) => {
 
           <div>
             <label className="block text-[13px] font-bold text-gray-700 mb-1.5">O'qituvchi <span className="text-red-500">*</span></label>
-            <select
-              value={form.oqituvchi}
-              onChange={(e) => setForm({ ...form, oqituvchi: e.target.value })}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-[14px] outline-none focus:border-[#7c3aed] bg-white text-gray-600"
+            <button
+              onClick={() => setShowOqituvchiModal(true)}
+              className="w-full border border-gray-200 border-dashed rounded-lg py-3 text-[#7c3aed] text-[13px] font-bold flex items-center justify-center gap-1 hover:bg-purple-50 transition-colors"
             >
-              <option value="">Tanlang</option>
-              {teachers.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
+              <Add sx={{ fontSize: 18 }} /> Qo'shish
+            </button>
+            {form.oqituvchiIds.length > 0 && (
+              <p className="text-[12px] text-green-600 font-semibold mt-2 text-center">
+                {form.oqituvchiIds.length} ta o'qituvchi tanlandi
+              </p>
+            )}
           </div>
 
           <div>
@@ -708,6 +837,56 @@ const toggleStatus = (id) => {
                 Bekor qilish
               </button>
               <button onClick={() => setShowTalabaModal(false)} className="bg-[#7c3aed] text-white px-5 py-2 rounded-lg text-[13px] font-bold hover:bg-[#6d28d9]">
+                Saqlash
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== ADD O'QITUVCHI MODAL (Inside Panel) ===== */}
+      {showOqituvchiModal && (
+        <div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center px-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-[400px] flex flex-col max-h-[80vh]">
+            <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+              <div>
+                <h3 className="text-[16px] font-bold text-gray-800">O'qituvchi qo'shish</h3>
+                <p className="text-[11px] text-gray-400">Bitta yoki bir nechta o'qituvchini tanlang</p>
+              </div>
+              <button onClick={() => setShowOqituvchiModal(false)} className="text-gray-400 hover:text-gray-600">
+                <Close sx={{ fontSize: 20 }} />
+              </button>
+            </div>
+            <div className="p-4 flex-1 overflow-y-auto">
+              <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 gap-2 mb-4">
+                <Search sx={{ fontSize: 18, color: "#9ca3af" }} />
+                <input
+                  type="text"
+                  placeholder="O'qituvchi qidirish..."
+                  value={oqituvchiSearch}
+                  onChange={(e) => setOqituvchiSearch(e.target.value)}
+                  className="bg-transparent text-[13px] outline-none text-gray-700 w-full"
+                />
+              </div>
+              <div className="border border-gray-200 rounded-lg overflow-hidden divide-y divide-gray-100">
+                {teachers.filter(t => t.name.toLowerCase().includes(oqituvchiSearch.toLowerCase())).map(teacher => (
+                  <label key={teacher.id} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={form.oqituvchiIds.includes(teacher.id)}
+                      onChange={() => toggleOqituvchi(teacher.id)}
+                      className="w-4 h-4 accent-[#7c3aed] rounded"
+                    />
+                    <span className="text-[13px] font-semibold text-gray-700">{teacher.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-100 flex justify-end gap-3">
+              <button onClick={() => setShowOqituvchiModal(false)} className="text-[13px] font-bold text-gray-600 hover:text-gray-800 px-4">
+                Bekor qilish
+              </button>
+              <button onClick={() => setShowOqituvchiModal(false)} className="bg-[#7c3aed] text-white px-5 py-2 rounded-lg text-[13px] font-bold hover:bg-[#6d28d9]">
                 Saqlash
               </button>
             </div>

@@ -372,35 +372,11 @@ const Talabalar = () => {
               </div>
               <button
                 type="button"
-                onClick={() => setShowGroupSelector(prev => !prev)}
+                onClick={() => setShowGroupSelector(true)}
                 className="w-full border border-gray-200 rounded-xl py-3.5 flex items-center justify-center gap-1.5 text-[#7c3aed] text-[13.5px] font-bold hover:bg-purple-50 transition-colors"
               >
                 <Add sx={{ fontSize: 18 }} /> Guruh qo'shish
               </button>
-
-              {showGroupSelector && (
-                <div className="mt-2 max-h-40 overflow-y-auto border border-gray-100 rounded-lg p-2 bg-white">
-                  {Array.isArray(groups) && groups.length > 0 ? (
-                    groups.map((g) => {
-                      const gid = g?.id ?? g?._id ?? g?.name ?? String(g);
-                      const isSelected = (form.groups || []).some(sg => (sg?.id ?? sg) === gid || sg === gid || sg?.name === gid || sg === g?.name);
-                      return (
-                        <label key={gid} className="flex items-center gap-3 px-2 py-1 hover:bg-gray-50 rounded">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleGroup(g)}
-                            className="w-4 h-4"
-                          />
-                          <span className="text-sm text-gray-700">{g.name || g.nomi || g.title || String(gid)}</span>
-                        </label>
-                      );
-                    })
-                  ) : (
-                    <div className="text-sm text-gray-500 px-2">Guruhlar topilmadi</div>
-                  )}
-                </div>
-              )}
             </div>
             <div>
               <label className="block text-[13px] font-bold text-gray-700 mb-1.5">Surati</label>
@@ -465,6 +441,54 @@ const Talabalar = () => {
           </div>
         </div>
       </div>
+
+      {/* ===== GROUP SELECTOR MODAL ===== */}
+      {showGroupSelector && (
+        <div className="fixed inset-0 bg-black/50 z-[120] flex items-center justify-center px-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-[400px] flex flex-col max-h-[80vh]">
+            <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+              <div>
+                <h3 className="text-[16px] font-bold text-gray-800">Guruh tanlash</h3>
+                <p className="text-[11px] text-gray-400">Bitta yoki bir nechta guruhni tanlang</p>
+              </div>
+              <button onClick={() => setShowGroupSelector(false)} className="text-gray-400 hover:text-gray-600">
+                <Close sx={{ fontSize: 20 }} />
+              </button>
+            </div>
+            <div className="p-4 flex-1 overflow-y-auto">
+              <div className="border border-gray-200 rounded-lg overflow-hidden divide-y divide-gray-100">
+                {Array.isArray(groups) && groups.length > 0 ? (
+                  groups.map((g) => {
+                    const gid = g?.id ?? g?._id ?? g?.name ?? String(g);
+                    const isSelected = (form.groups || []).some(sg => (sg?.id ?? sg) === gid || sg === gid || sg?.name === gid || sg === g?.name);
+                    return (
+                      <label key={gid} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleGroup(g)}
+                          className="w-4 h-4 accent-[#7c3aed] rounded"
+                        />
+                        <span className="text-[13px] font-semibold text-gray-700">{g.name || g.nomi || g.title || String(gid)}</span>
+                      </label>
+                    );
+                  })
+                ) : (
+                  <div className="p-4 text-sm text-gray-500 text-center">Guruhlar topilmadi</div>
+                )}
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-100 flex justify-end gap-3">
+              <button onClick={() => setShowGroupSelector(false)} className="text-[13px] font-bold text-gray-600 hover:text-gray-800 px-4">
+                Bekor qilish
+              </button>
+              <button onClick={() => setShowGroupSelector(false)} className="bg-[#7c3aed] text-white px-5 py-2 rounded-lg text-[13px] font-bold hover:bg-[#6d28d9]">
+                Saqlash
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

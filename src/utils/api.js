@@ -111,6 +111,49 @@ const resolveGroupStudents = (group, allStudents = []) => {
   return Array.from(unique.values());
 };
 
+const resolveGroupTeachers = (group, allTeachers = []) => {
+  const teachersById = new Map();
+  (Array.isArray(allTeachers) ? allTeachers : []).forEach((teacher) => {
+    const id = Number(teacher?.id ?? teacher?._id);
+    if (Number.isFinite(id) && id > 0) teachersById.set(id, teacher);
+  });
+
+  const rawTeachers = group?.teachers ?? group?.teacher_ids ?? group?.teacher_list ?? [];
+
+  const normalized = (Array.isArray(rawTeachers) ? rawTeachers : [])
+    .map((entry) => {
+      if (typeof entry === "number" || (typeof entry === "string" && /^\d+$/.test(entry.trim()))) {
+        const id = Number(entry);
+        const found = teachersById.get(id);
+        if (found) {
+          return {
+            id: found.id,
+            full_name: found.full_name || found.name,
+            name: found.name || found.full_name,
+          };
+        }
+        return null;
+      }
+
+      if (typeof entry === "object") {
+        return {
+          id: entry.id ?? entry._id,
+          full_name: entry.full_name || entry.name,
+          name: entry.name || entry.full_name,
+        };
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+
+  const unique = new Map();
+  normalized.forEach((teacher) => {
+    if (teacher?.id) unique.set(teacher.id, teacher);
+  });
+  return Array.from(unique.values());
+};
+
 const normalizeToken = (value) => {
   if (typeof value !== "string") return "";
   const token = value.trim();
@@ -234,7 +277,9 @@ export const api = {
   async createTeacher(fd) {
     const res = await fetch(`${BASE_URL}/api/v1/teachers`, {
       method: "POST",
-      headers: getHeaders(),
+      headers: {
+        Authorization: getHeaders().Authorization,
+      },
       body: fd, // FormData
     });
     if (!res.ok) {
@@ -314,14 +359,17 @@ export const api = {
 
     try {
       const allStudents = await this.getStudents();
+      const allTeachers = await this.getTeachers();
       return {
         ...group,
         students: resolveGroupStudents(group, allStudents),
+        teachers: resolveGroupTeachers(group, allTeachers),
       };
     } catch (e) {
       return {
         ...group,
         students: resolveGroupStudents(group, []),
+        teachers: resolveGroupTeachers(group, []),
       };
     }
   },
@@ -543,7 +591,9 @@ export const api = {
   async updateTeacher(id, fd) {
     const res = await fetch(`${BASE_URL}/api/v1/teachers/${id}`, {
       method: "PATCH",
-      headers: getHeaders(),
+      headers: {
+        Authorization: getHeaders().Authorization,
+      },
       body: fd,
     });
     if (!res.ok) {
@@ -704,6 +754,22 @@ export const api = {
     return res.json();
   },
 
+  async submitHomeworkResult(payload) {
+    const res = await fetch(`${BASE_URL}/api/v1/homework/result`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getHeaders(),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || "Homework result yuborishda xatolik");
+    }
+    return res.json();
+  },
+
   async getGroupFiles(groupId) {
     const res = await fetch(`${BASE_URL}/api/v1/files/${groupId}`, {
       headers: getHeaders(),
@@ -749,4 +815,4 @@ export function getTokenRole() {
   }
 }
 
-export { unwrapList, unwrapEntity, resolveGroupStudents };
+export { unwrapList, unwrapEntity, resolveGroupStudents, resolveGroupTeachers };
