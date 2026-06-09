@@ -11,50 +11,8 @@ const GroupDetails = () => {
   const [group, setGroup] = useState(null);
   const [loading, setLoading] = useState(true);
   const [videos, setVideos] = useState([]);
-  const [selectedFiles, setSelectedFiles] = useState([]);
-  const [videoLesson, setVideoLesson] = useState("Nodejs");
-  const [uploading, setUploading] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
-
-  const DB_NAME = "NajotEduGroupVideos";
-  const STORE_NAME = "videos";
-
-  const openVideoDB = () => new Promise((resolve, reject) => {
-    const request = window.indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: "videoId" });
-        store.createIndex("groupId", "groupId", { unique: false });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-
-  const saveVideoToDB = async (groupId, videoRecord) => {
-    const db = await openVideoDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).put({ ...videoRecord, groupId: String(groupId) });
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error || tx.transaction.error);
-    });
-  };
-
-  const loadVideosFromDB = async (groupId) => {
-    const db = await openVideoDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readonly");
-      const store = tx.objectStore(STORE_NAME);
-      const index = store.index("groupId");
-      const request = index.getAll(String(groupId));
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
-  };
 
   // Homework / submissions
   const [homeworks, setHomeworks] = useState([]);
@@ -97,6 +55,40 @@ const GroupDetails = () => {
   const [savedLessons, setSavedLessons] = useState({});
 
   const [activeDarslikTab, setActiveDarslikTab] = useState("Uyga vazifa");
+
+  // Upload modal states
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [videoLesson, setVideoLesson] = useState("Nodejs");
+
+  const handleFilesChange = (e) => {
+    const files = Array.from(e.target.files);
+    setSelectedFiles(files);
+  };
+
+  const handleUploadFiles = async () => {
+    if (selectedFiles.length === 0) return;
+    
+    setUploading(true);
+    try {
+      for (const file of selectedFiles) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('group_id', id);
+        await api.uploadGroupFile(formData);
+      }
+      await loadGroupVideos();
+      setShowUploadModal(false);
+      setSelectedFiles([]);
+      showToast("Fayllar muvaffaqiyatli yuklandi!", "success");
+    } catch (err) {
+      console.error("Failed to upload files:", err);
+      showToast("Fayllarni yuklashda xatolik yuz berdi", "error");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const getPublicFileUrl = (file) => {
     const path = file?.url || file?.path || file?.file || file?.file_path || file?.filename || "";
@@ -172,10 +164,31 @@ const GroupDetails = () => {
 
   const loadGroupVideos = async () => {
     try {
+      console.log('Loading group videos from API for group:', id);
       const data = await api.getGroupFiles(id);
-      setVideos(data || []);
+      console.log('Group videos data received from API:', data);
+      
+      // Filter to only show video files
+      const videoExtensions = ['.mp4', '.webm', '.mpeg', '.avi', '.mkv', '.m4v', '.ogm', '.mov', '.flv', '.wmv'];
+      const videoMimeTypes = ['video/mp4', 'video/webm', 'video/mpeg', 'video/avi', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska'];
+      
+      const filteredVideos = (data || []).filter(file => {
+        const filename = file?.filename || file?.name || file?.title || '';
+        const mimeType = file?.mime_type || file?.type || file?.content_type || '';
+        const extension = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+        
+        // Check if it's a video by extension or mime type
+        const isVideoByExtension = videoExtensions.some(ext => extension === ext);
+        const isVideoByMimeType = videoMimeTypes.some(type => mimeType.includes(type));
+        
+        return isVideoByExtension || isVideoByMimeType;
+      });
+      
+      console.log('Filtered videos:', filteredVideos);
+      setVideos(filteredVideos);
     } catch (err) {
-      console.error("Failed to load group videos:", err);
+      console.error("Failed to load group videos from API:", err);
+      setVideos([]);
     }
   };
 
@@ -210,7 +223,7 @@ const GroupDetails = () => {
     loadGroup();
     loadHomeworks();
     loadGroupVideos();
-    
+
     // Force load from localStorage immediately
     const storageKey = `lms_homeworks_${id}`;
     const stored = localStorage.getItem(storageKey);
@@ -224,27 +237,6 @@ const GroupDetails = () => {
         console.error('Failed to parse localStorage:', e);
       }
     }
-
-    // Load videos from IndexedDB
-    const loadStoredVideos = async () => {
-      try {
-        const stored = await loadVideosFromDB(id);
-        if (stored.length) {
-          setVideos(stored.map((video) => ({
-            id: video.videoId,
-            title: video.title,
-            lesson: video.lesson,
-            size: video.size,
-            date: video.date,
-            url: URL.createObjectURL(video.fileBlob),
-            fileBlob: video.fileBlob,
-          })));
-        }
-      } catch (err) {
-        console.error("Failed to load stored group videos:", err);
-      }
-    };
-    loadStoredVideos();
   }, [id]);
 
   // Refresh homeworks when component gains focus (navigation back)
@@ -490,45 +482,6 @@ const GroupDetails = () => {
       index += 1;
     }
     return `${size.toFixed(1)} ${units[index]}`;
-  };
-
-  const handleFilesChange = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length) {
-      setSelectedFiles(files);
-    }
-  };
-
-  const handleUploadFiles = async () => {
-    if (!selectedFiles.length) return;
-    setUploading(true);
-    const newFiles = selectedFiles.map((file, index) => ({
-      id: Date.now() + index,
-      title: file.name,
-      lesson: videoLesson,
-      size: formatFileSize(file.size),
-      date: new Date().toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }),
-      url: URL.createObjectURL(file),
-      fileBlob: file,
-    }));
-    setVideos((prev) => [...newFiles, ...prev]);
-    try {
-      await Promise.all(
-        newFiles.map((video) => saveVideoToDB(id, {
-          videoId: video.id,
-          title: video.title,
-          lesson: video.lesson,
-          size: video.size,
-          date: video.date,
-          fileBlob: video.fileBlob,
-        }))
-      );
-    } catch (err) {
-      console.error("Failed to persist uploaded videos:", err);
-    }
-    setSelectedFiles([]);
-    setUploading(false);
-    setShowUploadModal(false);
   };
 
   const handleUpdateSubmissionStatus = async (submissionId, status) => {
@@ -1414,14 +1367,14 @@ const GroupDetails = () => {
                     navigate(`/dashboard/groups/${id}/homework`);
                     return;
                   }
+                  if (activeDarslikTab === "Videolar") {
+                    setShowUploadModal(true);
+                    return;
+                  }
                   if (activeDarslikTab === "Imtihonlar") {
                     // Placeholder for exam creation flow
                     return;
                   }
-                  setActiveTab("Guruh darsliklari");
-                  setActiveDarslikTab("Videolar");
-                  setShowUploadModal(true);
-                  setSelectedFiles([]);
                 }}
                 className="bg-[#10b981] text-white text-[13px] font-semibold px-5 py-2 rounded-lg hover:bg-[#059669] transition-colors"
               >
@@ -1455,8 +1408,14 @@ const GroupDetails = () => {
                         <tr
                           key={hw.id || hw._id || `homework-${index}`}
                           className="hover:bg-gray-50/50 cursor-pointer"
-                          onClick={() => {
+                          onClick={async () => {
                             const hwId = hw.homework?.[0]?.id || hw.id || hw._id;
+                            // Call API to get pending submissions
+                            try {
+                              await api.getHomeworkResults(id, hwId, 'PENDING');
+                            } catch (err) {
+                              console.error('Failed to fetch pending homework results:', err);
+                            }
                             navigate(`/dashboard/groups/${id}/homework-detail/${hwId}`, { state: { homework: hw } });
                           }}
                         >
@@ -1466,16 +1425,16 @@ const GroupDetails = () => {
                           <td className="py-4 px-4 text-center">{hw.pass_score || hw.jayib || 0}</td>
                           <td className="py-4 px-4 text-center">
                             <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
-                              hw.status === 'active' || hw.status === 'published' ? 'bg-green-100 text-green-700' : 
-                              hw.status === 'draft' ? 'bg-gray-100 text-gray-600' : 
+                              hw.status === 'active' || hw.status === 'published' ? 'bg-green-100 text-green-700' :
+                              hw.status === 'draft' ? 'bg-gray-100 text-gray-600' :
                               'bg-blue-100 text-blue-700'
                             }`}>
-                              {hw.status === 'active' || hw.status === 'published' ? 'Faol' : hw.status || 'Noma\'lum'}
+                              {hw.status === 'active' || hw.status === 'published' ? 'Faol' : (typeof hw.status === 'string' ? hw.status : 'Noma\'lum')}
                             </span>
                           </td>
-                          <td className="py-4 px-4 text-gray-500">{hw.created_at ? new Date(hw.created_at).toLocaleString('uz-UZ', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : hw.given_time || '-'}</td>
-                          <td className="py-4 px-4 text-gray-500">{hw.deadline ? new Date(hw.deadline).toLocaleString('uz-UZ', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : hw.end_time || '-'}</td>
-                          <td className="py-4 px-4 text-gray-500">{hw.lesson_date ? new Date(hw.lesson_date).toLocaleDateString('uz-UZ', { day: 'numeric', month: 'short', year: 'numeric' }) : hw.date || '-'}</td>
+                          <td className="py-4 px-4 text-gray-500">{hw.created_at ? new Date(hw.created_at).toLocaleString('uz-UZ', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : (typeof hw.given_time === 'string' ? hw.given_time : '-')}</td>
+                          <td className="py-4 px-4 text-gray-500">{hw.deadline ? new Date(hw.deadline).toLocaleString('uz-UZ', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : (typeof hw.end_time === 'string' ? hw.end_time : '-')}</td>
+                          <td className="py-4 px-4 text-gray-500">{hw.lesson_date ? new Date(hw.lesson_date).toLocaleDateString('uz-UZ', { day: 'numeric', month: 'short', year: 'numeric' }) : (typeof hw.date === 'string' ? hw.date : '-')}</td>
                           <td className="py-4 px-4 text-gray-400 hover:text-gray-600">
                             <button
                               onClick={(e) => {
@@ -1565,12 +1524,12 @@ const GroupDetails = () => {
                                 <span className="w-9 h-9 rounded-2xl bg-[#eef2ff] text-[#7c3aed] flex items-center justify-center">
                                   <PlayCircleFilled sx={{ fontSize: 18 }} />
                                 </span>
-                                {video.title}
+                                {typeof video.title === 'string' ? video.title : 'Noma\'lum'}
                               </td>
-                              <td className="px-4 py-4 text-sm text-gray-600">{video.lesson}</td>
-                              <td className="px-4 py-4 text-sm text-gray-600">{video.size}</td>
-                              <td className="px-4 py-4 text-sm text-gray-600">{video.date}</td>
-                              <td className="px-4 py-4 text-sm text-gray-600">{video.date}</td>
+                              <td className="px-4 py-4 text-sm text-gray-600">{typeof video.lesson === 'string' ? video.lesson : '-'}</td>
+                              <td className="px-4 py-4 text-sm text-gray-600">{typeof video.size === 'string' ? video.size : '-'}</td>
+                              <td className="px-4 py-4 text-sm text-gray-600">{typeof video.date === 'string' ? video.date : '-'}</td>
+                              <td className="px-4 py-4 text-sm text-gray-600">{typeof video.date === 'string' ? video.date : '-'}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1967,8 +1926,27 @@ const GroupDetails = () => {
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Videofaylni yuklash uchun ushbu hududga bosing yoki faylni olib keling</h3>
                 <p className="text-sm text-gray-500 mb-6">Videofayl: .mp4, .webm, .mpeg, .avi, .mkv, .m4v, .ogm, .mov formatlaridan biri bo'lishi kerak</p>
-                <input id="modal-video-upload" type="file" accept="video/*" multiple className="hidden" onChange={handleFilesChange} />
-                <label htmlFor="modal-video-upload" className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-6 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer">
+                <input
+                  id="modal-video-upload"
+                  type="file"
+                  accept="video/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleFilesChange}
+                  onClick={(e) => console.log('File input clicked')}
+                />
+                <label
+                  htmlFor="modal-video-upload"
+                  className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-white px-6 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer"
+                  onClick={(e) => {
+                    console.log('Label clicked');
+                    const input = document.getElementById('modal-video-upload');
+                    if (input) {
+                      console.log('Triggering file input click');
+                      input.click();
+                    }
+                  }}
+                >
                   Fayl tanlash
                 </label>
                 {selectedFiles.length > 0 && (

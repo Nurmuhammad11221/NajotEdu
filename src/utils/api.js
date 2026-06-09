@@ -399,21 +399,30 @@ export const api = {
       topic: String(topic || "").trim(),
       description: String(description || "").trim(),
     };
-    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-      console.log('api.createLesson payload:', payload);
+    console.log('Creating lesson with payload:', payload);
+    console.log('Headers:', getHeaders());
+    try {
+      const res = await fetch(`${BASE_URL}/api/v1/lessons`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getHeaders(),
+        },
+        body: JSON.stringify(payload),
+      });
+      console.log('Create lesson response status:', res.status, 'url:', res.url);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Create lesson error response:', errorText);
+        await throwApiError(res, "Dars yaratishda xatolik");
+      }
+      const result = await res.json();
+      console.log('Lesson created successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('Failed to create lesson:', error);
+      throw error;
     }
-    const res = await fetch(`${BASE_URL}/api/v1/lessons`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...getHeaders(),
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      await throwApiError(res, "Dars yaratishda xatolik");
-    }
-    return res.json();
   },
 
   /** @deprecated use createLesson */
@@ -777,6 +786,27 @@ export const api = {
     return res.json();
   },
 
+  async getHomeworkResults(groupId, homeworkId, status = 'PENDING') {
+    console.log('Fetching homework results from:', `${BASE_URL}/api/v1/group/${groupId}/homework/${homeworkId}/results?status=${status}`);
+    try {
+      const res = await fetch(`${BASE_URL}/api/v1/group/${groupId}/homework/${homeworkId}/results?status=${status}`, {
+        headers: getHeaders(),
+      });
+      console.log('Homework results response status:', res.status, 'url:', res.url);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Homework results error response:', errorText);
+        throw new Error(`Homework results yuklashda xatolik (${res.status}): ${errorText}`);
+      }
+      const data = await res.json();
+      console.log('Homework results data received:', data);
+      return unwrapList(data);
+    } catch (error) {
+      console.error('Failed to fetch homework results:', error);
+      throw error;
+    }
+  },
+
   async submitHomeworkResult(payload) {
     const res = await fetch(`${BASE_URL}/api/v1/homework/result`, {
       method: "POST",
@@ -794,11 +824,24 @@ export const api = {
   },
 
   async getGroupFiles(groupId) {
-    const res = await fetch(`${BASE_URL}/api/v1/files/${groupId}`, {
-      headers: getHeaders(),
-    });
-    if (!res.ok) throw new Error("Fayllarni yuklashda xatolik");
-    return unwrapList(await res.json());
+    console.log('Fetching group files from:', `${BASE_URL}/api/v1/files/${groupId}`);
+    try {
+      const res = await fetch(`${BASE_URL}/api/v1/files/${groupId}`, {
+        headers: getHeaders(),
+      });
+      console.log('Group files response status:', res.status, 'url:', res.url);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Group files error response:', errorText);
+        throw new Error(`Fayllarni yuklashda xatolik (${res.status}): ${errorText}`);
+      }
+      const data = await res.json();
+      console.log('Group files data received:', data);
+      return unwrapList(data);
+    } catch (error) {
+      console.error('Failed to fetch group files:', error);
+      throw error;
+    }
   },
 
   async uploadGroupFile(groupId, file, lessonId = 1) {

@@ -155,14 +155,14 @@ const HomeworkDetail = () => {
     console.log('allStudents:', allStudents);
     console.log('submissions:', submissions);
     console.log('activeTab:', activeTab);
-    
+
     // Get all students with their submission status
     const studentsWithStatus = allStudents.map(student => {
-      const submission = submissions.find(sub => 
+      const submission = submissions.find(sub =>
         String(sub.student_id || sub.student?.id) === String(student.id)
       );
       const status = submission?.status || 'not_done';
-      console.log('Student:', student.full_name, 'Status:', status, 'Has submission:', !!submission);
+      console.log('Student:', student.full_name || student.name, 'Status:', status, 'Has submission:', !!submission);
       return {
         student,
         submission,
@@ -176,11 +176,11 @@ const HomeworkDetail = () => {
     // Filter by active tab
     switch (activeTab) {
       case "pending":
-        return studentsWithStatus.filter(item => item.status === "pending" || (!item.status && item.submission));
+        return studentsWithStatus.filter(item => item.status === "pending" || item.status === "kutayotgan");
       case "returned":
-        return studentsWithStatus.filter(item => item.status === "returned");
+        return studentsWithStatus.filter(item => item.status === "returned" || item.status === "qaytarilgan");
       case "accepted":
-        return studentsWithStatus.filter(item => item.status === "accepted");
+        return studentsWithStatus.filter(item => item.status === "accepted" || item.status === "qabul_qilingan");
       case "not_done":
         return studentsWithStatus.filter(item => item.status === "not_done" || item.status === "not_submitted" || (!item.submission));
       default:
@@ -190,7 +190,7 @@ const HomeworkDetail = () => {
 
   const getTabCount = (tabKey) => {
     const studentsWithStatus = allStudents.map(student => {
-      const submission = submissions.find(sub => 
+      const submission = submissions.find(sub =>
         String(sub.student_id || sub.student?.id) === String(student.id)
       );
       return {
@@ -201,11 +201,11 @@ const HomeworkDetail = () => {
 
     switch (tabKey) {
       case "pending":
-        return studentsWithStatus.filter(item => item.status === "pending" || (!item.status && item.hasSubmission)).length;
+        return studentsWithStatus.filter(item => item.status === "pending" || item.status === "kutayotgan").length;
       case "returned":
-        return studentsWithStatus.filter(item => item.status === "returned").length;
+        return studentsWithStatus.filter(item => item.status === "returned" || item.status === "qaytarilgan").length;
       case "accepted":
-        return studentsWithStatus.filter(item => item.status === "accepted").length;
+        return studentsWithStatus.filter(item => item.status === "accepted" || item.status === "qabul_qilingan").length;
       case "not_done":
         return studentsWithStatus.filter(item => item.status === "not_done" || item.status === "not_submitted" || (!item.hasSubmission)).length;
       default:
