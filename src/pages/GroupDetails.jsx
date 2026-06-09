@@ -1453,7 +1453,7 @@ const GroupDetails = () => {
                       console.log('Rendering homework:', hw);
                       return (
                         <tr
-                          key={hw.id || hw._id || index}
+                          key={hw.id || hw._id || `homework-${index}`}
                           className="hover:bg-gray-50/50 cursor-pointer"
                           onClick={() => {
                             const hwId = hw.homework?.[0]?.id || hw.id || hw._id;
@@ -1552,7 +1552,7 @@ const GroupDetails = () => {
                         <tbody className="divide-y divide-gray-100">
                           {videos.map((video, index) => (
                             <tr
-                              key={video.id}
+                              key={video.id || video._id || `video-${index}`}
                               className={`hover:bg-gray-50 ${video.url ? "cursor-pointer" : ""}`}
                               onClick={() => {
                                 if (!video.url) return;
@@ -1609,8 +1609,8 @@ const GroupDetails = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-[13px] text-gray-700 font-medium">
-                    {examRows.map((exam) => (
-                      <tr key={exam.id} className="hover:bg-gray-50">
+                    {examRows.map((exam, index) => (
+                      <tr key={exam.id || exam._id || `exam-${index}`} className="hover:bg-gray-50">
                         <td className="py-4 px-4">{exam.id}</td>
                         <td className="py-4 px-4 font-semibold text-[#1d4ed8]">{exam.title}</td>
                         <td className="py-4 px-4 text-center">{exam.students}</td>
