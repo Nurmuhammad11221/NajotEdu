@@ -17,7 +17,7 @@ const kursOylar = ["1 oy", "2 oy", "3 oy", "6 oy", "12 oy"];
 
 const rangli = [
   "#1e3a5f", "#7c3aed", "#dc2626", "#ea580c",
-  "#15803d", "#0891b2", "#2563eb", "#7c3aed", "#db2777"
+  "#15803d", "#0891b2", "#2563eb", "#db2777"
 ];
 
 const cardColors = [
@@ -272,23 +272,6 @@ const Kurslar = () => {
             </div>
           </div>
 
-          {/* Filial Tabs */}
-          <div className="flex gap-2 mb-5">
-            {filialTabs.map((f) => (
-              <button
-                key={f}
-                onClick={() => setActiveFilial(f)}
-                className={`px-4 py-1.5 rounded-full text-[12px] font-medium border transition-colors ${
-                  activeFilial === f
-                    ? "bg-gray-800 text-white border-gray-800"
-                    : "text-gray-600 border-gray-300 hover:bg-gray-100"
-                }`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-
           {/* Course Cards Grid */}
           {visibleCourses.length === 0 ? (
             <div className="py-16 text-center text-gray-400 text-[14px]">
@@ -375,30 +358,6 @@ const Kurslar = () => {
               onChange={(e) => setForm({ ...form, nomi: e.target.value })}
               className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-[13px] text-gray-700 outline-none focus:border-[#7c3aed] transition-colors"
             />
-          </div>
-
-          {/* Filiallar */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[13px] font-semibold text-gray-700">Kurs mavjud boledigon filiallar</label>
-              <button
-                onClick={() => setForm({ ...form, filiallar: [...filialOptions] })}
-                className="text-[12px] text-[#7c3aed] font-semibold hover:underline"
-              >
-                Hammasini tanlash
-              </button>
-            </div>
-            {filialOptions.map((f) => (
-              <label key={f} className="flex items-center gap-2 mb-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.filiallar.includes(f)}
-                  onChange={() => toggleFilial(f)}
-                  className="w-4 h-4 accent-[#7c3aed] rounded"
-                />
-                <span className="text-[13px] text-gray-700">{f}</span>
-              </label>
-            ))}
           </div>
 
           {/* Dars davomiyligi */}

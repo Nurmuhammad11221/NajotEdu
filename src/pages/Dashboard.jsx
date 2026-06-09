@@ -2,8 +2,10 @@ import React, { useState, useEffect } from "react";
 import { Class, MenuBook, PeopleAlt, CardGiftcard } from "@mui/icons-material";
 import { ExpandMore, ExpandLess } from "@mui/icons-material";
 import { api } from "../utils/api";
+import { useLocation } from "react-router-dom";
 
 const Dashboard = () => {
+  const location = useLocation();
   const [stats, setStats] = useState([
     { icon: <Class sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Sinflar", value: 0 },
     { icon: <MenuBook sx={{ fontSize: 28, color: "#7c3aed" }} />, label: "Fanlar", value: 0 },
@@ -14,6 +16,9 @@ const Dashboard = () => {
   const [scheduleOpen, setScheduleOpen] = useState(true);
 
   useEffect(() => {
+    // Only load stats if we're actually on the dashboard page
+    if (location.pathname !== "/dashboard") return;
+
     const loadStats = async () => {
       try {
         const [groupsData, coursesData, studentsData, teachersData] = await Promise.all([
@@ -41,7 +46,7 @@ const Dashboard = () => {
     };
 
     loadStats();
-  }, []); 
+  }, [location.pathname]); 
   
   return (
     <div className="p-6">

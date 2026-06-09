@@ -699,11 +699,11 @@ const GroupDetails = () => {
   const selectedLessonIsFuture = selectedLessonStatus === "future";
   const selectedLessonIsToday = selectedLessonStatus === "today";
   const isLessonLocked = selectedSavedLesson && selectedSavedLesson.attendance;
-  const canEditLesson = selectedLesson && !selectedLessonIsFuture && !isLessonLocked;
+  const canEditLesson = selectedLesson && !selectedLessonIsFuture && !selectedLessonIsPast && !isLessonLocked;
   const lessonStatusLabel = isLessonLocked
     ? "Davomat saqlangan va qulflangan"
     : selectedLessonIsFuture
-      ? "Dars vaqti hali kelmagan"
+      ? "Hali kelmagan bu sanna"
       : selectedLessonIsPast
         ? "Dars o'tib ketgan"
         : "Joriy dars";
@@ -1017,10 +1017,28 @@ const GroupDetails = () => {
                 <h3 className="font-semibold text-[14px]">Guruh mentorlari</h3>
                 <button className="text-white/80 hover:text-white"><Close sx={{ fontSize: 18 }} /></button>
               </div>
-              <div className="p-6 flex flex-col items-center">
-                <img src={teacherPhoto} alt={teacherName} className="w-16 h-16 rounded-full object-cover border border-gray-200 mb-3 shadow-sm" />
-                <span className="text-teal-500 text-[11px] font-bold uppercase mb-1">Teacher</span>
-                <span className="text-gray-800 font-bold text-[14px]">{teacherName}</span>
+              <div className="p-6 flex flex-col gap-4">
+                {Array.isArray(safeGroup.teachers) && safeGroup.teachers.length > 0 ? (
+                  safeGroup.teachers.map((teacher, index) => {
+                    const name = teacher.name || teacher.full_name || `Mentor ${index + 1}`;
+                    const photo = teacher.photo ? `https://najot-edu.softwareengineer.uz/${teacher.photo}` : `https://i.pravatar.cc/150?u=${name}`;
+                    return (
+                      <div key={teacher.id || teacher._id || index} className="flex items-center gap-3">
+                        <img src={photo} alt={name} className="w-12 h-12 rounded-full object-cover border border-gray-200 shadow-sm" />
+                        <div>
+                          <span className="text-teal-500 text-[10px] font-bold uppercase">Teacher</span>
+                          <span className="text-gray-800 font-bold text-[13px] block">{name}</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="flex flex-col items-center">
+                    <img src={teacherPhoto} alt={teacherName} className="w-16 h-16 rounded-full object-cover border border-gray-200 mb-3 shadow-sm" />
+                    <span className="text-teal-500 text-[11px] font-bold uppercase mb-1">Teacher</span>
+                    <span className="text-gray-800 font-bold text-[14px]">{teacherName}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1059,7 +1077,7 @@ const GroupDetails = () => {
                     </tr>
                     <tr>
                       <td className="py-3.5 px-5 font-medium text-gray-500">Jami darslar soni:</td>
-                      <td className="py-3.5 px-5 font-bold text-right">{totalLessons}</td>
+                      <td className="py-3.5 px-5 font-bold text-right"> {totalLessons}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1210,7 +1228,7 @@ const GroupDetails = () => {
                       
                       <div>
                         <p className="text-[12px] text-gray-400 font-semibold mb-1">Dars kuni</p>
-                        <p className="font-bold text-gray-800 text-[14px]">
+                        <p className={`font-bold text-[14px] ${selectedLessonIsPast ? "text-red-600" : "text-gray-800"}`}>
                           {selectedLesson.getFullYear()} {shortMonths[selectedLesson.getMonth()]} {selectedLesson.getDate() < 10 ? '0'+selectedLesson.getDate() : selectedLesson.getDate()}
                         </p>
                       </div>

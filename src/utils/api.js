@@ -458,9 +458,11 @@ export const api = {
 
   // Rooms (Xonalar)
   async getRooms() {
+    console.log('Fetching rooms from:', `${BASE_URL}/api/v1/rooms`);
     const res = await fetch(`${BASE_URL}/api/v1/rooms`, {
       headers: getHeaders(),
     });
+    console.log('Rooms response status:', res.status, 'url:', res.url);
     if (!res.ok) throw new Error("Xonalarni yuklashda xatolik");
     return unwrapList(await res.json());
   },
@@ -520,30 +522,51 @@ export const api = {
 
   // Courses (Kurslar)
   async getCourses() {
-    const res = await fetch(`${BASE_URL}/api/v1/courses`, {
-      headers: getHeaders(),
-    });
-    if (!res.ok) throw new Error("Kurslarni yuklashda xatolik");
-    return unwrapList(await res.json());
+    console.log('Fetching courses from:', `${BASE_URL}/api/v1/courses`);
+    try {
+      const res = await fetch(`${BASE_URL}/api/v1/courses`, {
+        headers: getHeaders(),
+      });
+      console.log('Courses response status:', res.status, 'url:', res.url);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Courses error response:', errorText);
+        throw new Error(`Kurslarni yuklashda xatolik (${res.status}): ${errorText}`);
+      }
+      const data = await res.json();
+      console.log('Courses data received:', data);
+      return unwrapList(data);
+    } catch (error) {
+      console.error('Failed to fetch courses:', error);
+      throw error;
+    }
   },
 
   async createCourse(data) {
-    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-      console.log('api.createCourse headers:', getHeaders());
-      console.log('api.createCourse payload:', data);
+    console.log('Creating course with payload:', data);
+    console.log('Headers:', getHeaders());
+    try {
+      const res = await fetch(`${BASE_URL}/api/v1/courses`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getHeaders(),
+        },
+        body: JSON.stringify(data),
+      });
+      console.log('Create course response status:', res.status, 'url:', res.url);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Create course error response:', errorText);
+        throw new Error(`Kurs qo'shishda xatolik (${res.status}): ${errorText}`);
+      }
+      const result = await res.json();
+      console.log('Course created successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('Failed to create course:', error);
+      throw error;
     }
-    const res = await fetch(`${BASE_URL}/api/v1/courses`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...getHeaders(),
-      },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) {
-      await throwApiError(res, "Kurs qo'shishda xatolik");
-    }
-    return res.json();
   },
 
   async deleteCourse(id) {
